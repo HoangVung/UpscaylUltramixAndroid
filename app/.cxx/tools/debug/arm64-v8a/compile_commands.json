@@ -1,0 +1,12 @@
+[
+{
+  "directory": "D:/0VungApps/UpscaylUltramixAndroid/app/.cxx/Debug/4e327338/arm64-v8a",
+  "command": "C:\\Users\\vungh\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe --target=aarch64-none-linux-android26 --sysroot=C:/Users/vungh/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/sysroot -Dultramix_jni_EXPORTS -isystem D:/0VungApps/UpscaylUltramixAndroid/app/src/main/cpp/ncnn-sdk/arm64-v8a/include/ncnn -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fexceptions -frtti -fno-limit-debug-info  -fPIC -fno-rtti -fno-exceptions -pthread -o CMakeFiles\\ultramix_jni.dir\\upscaler_jni.cpp.o -c D:\\0VungApps\\UpscaylUltramixAndroid\\app\\src\\main\\cpp\\upscaler_jni.cpp",
+  "file": "D:\\0VungApps\\UpscaylUltramixAndroid\\app\\src\\main\\cpp\\upscaler_jni.cpp"
+},
+{
+  "directory": "D:/0VungApps/UpscaylUltramixAndroid/app/.cxx/Debug/4e327338/arm64-v8a",
+  "command": "C:\\Users\\vungh\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe --target=aarch64-none-linux-android26 --sysroot=C:/Users/vungh/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/sysroot -Dultramix_jni_EXPORTS -isystem D:/0VungApps/UpscaylUltramixAndroid/app/src/main/cpp/ncnn-sdk/arm64-v8a/include/ncnn -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fexceptions -frtti -fno-limit-debug-info  -fPIC -fno-rtti -fno-exceptions -pthread -o CMakeFiles\\ultramix_jni.dir\\realesrgan.cpp.o -c D:\\0VungApps\\UpscaylUltramixAndroid\\app\\src\\main\\cpp\\realesrgan.cpp",
+  "file": "D:\\0VungApps\\UpscaylUltramixAndroid\\app\\src\\main\\cpp\\realesrgan.cpp"
+}
+]

@@ -1,0 +1,7 @@
+Copy vào thư mục này 2 file:
+
+ultramix-balanced-4x.param
+ultramix-balanced-4x.bin
+
+Nguồn:
+D:\GitHub\upscayl\resources\models\
