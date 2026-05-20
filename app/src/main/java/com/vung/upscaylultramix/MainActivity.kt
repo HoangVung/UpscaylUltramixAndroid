@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.concurrent.thread
@@ -21,8 +22,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var selectButton: Button
     private lateinit var upscaleButton: Button
+    private lateinit var outputDirButton: Button
+    private lateinit var outputDirText: TextView
 
     private var inputFile: File? = null
+    private var outputTreeUri: Uri? = null
 
     companion object {
         init {
@@ -36,6 +40,18 @@ class MainActivity : AppCompatActivity() {
         modelParamPath: String,
         modelBinPath: String
     ): Int
+
+    private val pickDirectory =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+            if (uri != null) {
+                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                contentResolver.takePersistableUriPermission(uri, takeFlags)
+                outputTreeUri = uri
+                val display = uri.lastPathSegment?.substringAfter(":") ?: uri.toString()
+                outputDirText.text = "Thư mục: $display"
+                statusText.text = "Đã chọn thư mục lưu ảnh."
+            }
+        }
 
     private val pickImage =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -56,9 +72,15 @@ class MainActivity : AppCompatActivity() {
         progressBar = findViewById(R.id.progressBar)
         selectButton = findViewById(R.id.selectButton)
         upscaleButton = findViewById(R.id.upscaleButton)
+        outputDirButton = findViewById(R.id.outputDirButton)
+        outputDirText = findViewById(R.id.outputDirText)
 
         selectButton.setOnClickListener {
             pickImage.launch("image/*")
+        }
+
+        outputDirButton.setOnClickListener {
+            pickDirectory.launch(null)
         }
 
         upscaleButton.setOnClickListener {
@@ -101,25 +123,46 @@ class MainActivity : AppCompatActivity() {
         return outFile
     }
 
+    private fun saveToUserDir(tempFile: File): String {
+        val treeUri = outputTreeUri
+        if (treeUri == null) return tempFile.absolutePath
+
+        try {
+            val docTree = DocumentFile.fromTreeUri(this, treeUri)
+            val fileName = tempFile.name
+            val targetFile = docTree?.createFile("image/png", fileName)
+            if (targetFile != null) {
+                contentResolver.openOutputStream(targetFile.uri, "w")?.use { out ->
+                    tempFile.inputStream().use { inp ->
+                        inp.copyTo(out)
+                    }
+                }
+                return "Đã lưu vào thư mục đã chọn: $fileName"
+            }
+        } catch (e: Exception) {
+            // fallback to temp path
+        }
+        return tempFile.absolutePath
+    }
+
     private fun runUpscale() {
         val input = inputFile ?: return
         progressBar.visibility = View.VISIBLE
         upscaleButton.isEnabled = false
         selectButton.isEnabled = false
+        outputDirButton.isEnabled = false
         statusText.text = "Đang upscale bằng Ultramix 4x..."
 
         thread {
             try {
                 val param = copyAssetToFile("models/ultramix-balanced-4x.param", "ultramix-balanced-4x.param")
                 val bin = copyAssetToFile("models/ultramix-balanced-4x.bin", "ultramix-balanced-4x.bin")
-                val output = File(
-                    getExternalFilesDir(null),
-                    "ultramix_${System.currentTimeMillis()}.png"
-                )
+                val tempDir = getExternalFilesDir(null) ?: filesDir
+                val tempOutput = File(tempDir, "ultramix_${System.currentTimeMillis()}.png")
 
                 val result = upscaleNative(
                     input.absolutePath,
-                    output.absolutePath,
+                    tempOutput.absolutePath,
                     param.absolutePath,
                     bin.absolutePath
                 )
@@ -128,10 +171,12 @@ class MainActivity : AppCompatActivity() {
                     progressBar.visibility = View.GONE
                     selectButton.isEnabled = true
                     upscaleButton.isEnabled = true
+                    outputDirButton.isEnabled = true
 
-                    if (result == 0 && output.exists()) {
-                        previewImage.setImageBitmap(BitmapFactory.decodeFile(output.absolutePath))
-                        statusText.text = "Xong. File đã lưu tại:\n${output.absolutePath}"
+                    if (result == 0 && tempOutput.exists()) {
+                        val displayPath = saveToUserDir(tempOutput)
+                        previewImage.setImageBitmap(BitmapFactory.decodeFile(tempOutput.absolutePath))
+                        statusText.text = "Xong! $displayPath"
                     } else {
                         statusText.text = "Upscale lỗi. Mã lỗi: $result"
                     }
@@ -141,6 +186,7 @@ class MainActivity : AppCompatActivity() {
                     progressBar.visibility = View.GONE
                     selectButton.isEnabled = true
                     upscaleButton.isEnabled = true
+                    outputDirButton.isEnabled = true
                     statusText.text = "Lỗi: ${e.message}"
                 }
             }
