@@ -13,6 +13,12 @@ add_library(
     realesrgan.cpp
 )
 
+target_include_directories(
+    ultramix_jni
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/ncnn-sdk/${ANDROID_ABI}/include"
+)
+
 find_library(log-lib log)
 find_library(android-lib android)
 find_library(jnigraphics-lib jnigraphics)

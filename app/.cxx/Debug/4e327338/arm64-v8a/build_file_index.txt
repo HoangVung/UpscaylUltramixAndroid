@@ -1,9 +1,0 @@
-D:\0VungApps\UpscaylUltramixAndroid\app\src\main\cpp\CMakeLists.txt
-D:\0VungApps\UpscaylUltramixAndroid\app\src\main\cpp\ncnn-sdk\arm64-v8a\lib\cmake\glslang\glslang-config-version.cmake
-D:\0VungApps\UpscaylUltramixAndroid\app\src\main\cpp\ncnn-sdk\arm64-v8a\lib\cmake\glslang\glslang-config.cmake
-D:\0VungApps\UpscaylUltramixAndroid\app\src\main\cpp\ncnn-sdk\arm64-v8a\lib\cmake\glslang\glslang-targets-release.cmake
-D:\0VungApps\UpscaylUltramixAndroid\app\src\main\cpp\ncnn-sdk\arm64-v8a\lib\cmake\glslang\glslang-targets.cmake
-D:\0VungApps\UpscaylUltramixAndroid\app\src\main\cpp\ncnn-sdk\arm64-v8a\lib\cmake\ncnn\ncnn-release.cmake
-D:\0VungApps\UpscaylUltramixAndroid\app\src\main\cpp\ncnn-sdk\arm64-v8a\lib\cmake\ncnn\ncnn.cmake
-D:\0VungApps\UpscaylUltramixAndroid\app\src\main\cpp\ncnn-sdk\arm64-v8a\lib\cmake\ncnn\ncnnConfig.cmake
-D:\0VungApps\UpscaylUltramixAndroid\app\src\main\cpp\ncnn-sdk\arm64-v8a\lib\cmake\ncnn\ncnnConfigVersion.cmake
