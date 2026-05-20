@@ -5,3 +5,23 @@ local.properties
 .idea/
 *.iml
 .cxx/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# PyInstaller
+dist/
+*.spec
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.log
+*.tmp
