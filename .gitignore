@@ -1,27 +1,28 @@
+# Gradle / Android build output
 .gradle/
 build/
 app/build/
-local.properties
+app/build*/
+
+# Android Studio / IntelliJ
 .idea/
 *.iml
+
+# Local machine config
+local.properties
+
+# Native / CMake generated files
 .cxx/
+app/.cxx/
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.venv/
-venv/
+# Generated APK/AAB
+*.apk
+*.aab
 
-# PyInstaller
-dist/
-*.spec
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Temporary files
+# Logs and temp files
 *.log
 *.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
