@@ -1,6 +1,7 @@
 package com.vung.upscaylultramix
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -9,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.view.View
 import android.widget.*
@@ -27,6 +29,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var upscaleButton: Button
     private lateinit var outputDirButton: Button
     private lateinit var outputDirText: TextView
+    private lateinit var openOutputDirButton: Button
+
+    private var lastSavedUri: Uri? = null
 
     private var inputFile: File? = null
     private var outputTreeUri: Uri? = null
@@ -55,6 +60,7 @@ class MainActivity : AppCompatActivity() {
         outputPath: String,
         modelParamPath: String,
         modelBinPath: String,
+        scale: Int,
         callbackTarget: MainActivity
     ): Int
 
@@ -69,6 +75,8 @@ class MainActivity : AppCompatActivity() {
                 val display = uri.lastPathSegment?.substringAfter(":") ?: uri.toString()
                 outputDirText.text = "Thư mục: $display"
                 statusText.text = "Đã chọn thư mục lưu ảnh."
+                openOutputDirButton.isEnabled = true
+                saveDirectoryToPrefs(uri)
             }
         }
 
@@ -117,6 +125,7 @@ class MainActivity : AppCompatActivity() {
         upscaleButton = findViewById(R.id.upscaleButton)
         outputDirButton = findViewById(R.id.outputDirButton)
         outputDirText = findViewById(R.id.outputDirText)
+        openOutputDirButton = findViewById(R.id.openOutputDirButton)
 
         selectButton.setOnClickListener {
             pickImage.launch("image/*")
@@ -124,6 +133,10 @@ class MainActivity : AppCompatActivity() {
 
         outputDirButton.setOnClickListener {
             pickDirectory.launch(null)
+        }
+
+        openOutputDirButton.setOnClickListener {
+            openOutputFolder()
         }
 
         upscaleButton.setOnClickListener {
@@ -137,10 +150,78 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        restoreSavedDirectory()
+
         val vulkanOk = packageManager.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION)
         if (!vulkanOk) {
             statusText.text = "Máy có thể không hỗ trợ Vulkan đầy đủ. App vẫn mở được nhưng upscale có thể lỗi."
         }
+    }
+
+    private fun restoreSavedDirectory() {
+        val prefs = getSharedPreferences("upscayl_prefs", Context.MODE_PRIVATE)
+        val uriStr = prefs.getString("output_tree_uri", null)
+        if (uriStr != null) {
+            try {
+                val uri = Uri.parse(uriStr)
+                var hasPermission = false
+                val persistedPermissions = contentResolver.persistedUriPermissions
+                for (permission in persistedPermissions) {
+                    if (permission.uri == uri) {
+                        hasPermission = true
+                        break
+                    }
+                }
+                if (hasPermission) {
+                    outputTreeUri = uri
+                    val display = uri.lastPathSegment?.substringAfter(":") ?: uri.toString()
+                    outputDirText.text = "Thư mục: $display"
+                    openOutputDirButton.isEnabled = true
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+    }
+
+    private fun saveDirectoryToPrefs(uri: Uri) {
+        val prefs = getSharedPreferences("upscayl_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("output_tree_uri", uri.toString()).apply()
+    }
+
+    private fun openOutputFolder() {
+        val treeUri = outputTreeUri
+        if (treeUri != null) {
+            try {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                    putExtra(DocumentsContract.EXTRA_INITIAL_URI, treeUri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+                }
+                startActivity(intent)
+                return
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+
+        val fileUri = lastSavedUri
+        if (fileUri != null) {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(fileUri, "image/png")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(intent)
+                return
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+
+        Toast.makeText(this, "Hãy dùng ứng dụng Files để mở thư mục lưu", Toast.LENGTH_LONG).show()
     }
 
     private fun copyUriToCache(uri: Uri): File {
@@ -164,17 +245,24 @@ class MainActivity : AppCompatActivity() {
     private fun copyAssetToFile(assetPath: String, outName: String): File {
         val outFile = File(filesDir, outName)
         if (!outFile.exists() || outFile.length() == 0L) {
-            assets.open(assetPath).use { input ->
-                FileOutputStream(outFile).use { output ->
-                    input.copyTo(output)
+            try {
+                assets.open(assetPath).use { input ->
+                    FileOutputStream(outFile).use { output ->
+                        input.copyTo(output)
+                    }
                 }
+            } catch (e: java.io.FileNotFoundException) {
+                throw Exception("Thiếu model: $assetPath")
             }
         }
         return outFile
     }
 
     private fun saveToUserDir(tempFile: File): Pair<String, Boolean> {
-        val treeUri = outputTreeUri ?: return Pair(tempFile.absolutePath, true)
+        val treeUri = outputTreeUri ?: run {
+            lastSavedUri = Uri.fromFile(tempFile)
+            return Pair(tempFile.absolutePath, true)
+        }
 
         try {
             val docTree = DocumentFile.fromTreeUri(this, treeUri)
@@ -188,6 +276,7 @@ class MainActivity : AppCompatActivity() {
                     inp.copyTo(out)
                 }
             }
+            lastSavedUri = targetFile.uri
             return Pair("Đã lưu vào thư mục đã chọn: $fileName", true)
         } catch (e: Exception) {
             return Pair("Lỗi khi copy vào thư mục đích: ${e.message}", false)
@@ -216,14 +305,13 @@ class MainActivity : AppCompatActivity() {
         totalTiles: Int,
         phase: String,
         elapsedMs: Long,
-        usingVulkan: Boolean
+        modeLabel: String
     ) {
         runOnUiThread {
-            val mode = if (usingVulkan) "Vulkan" else "CPU"
             val progressText = if (totalTiles > 0) {
-                "$phase $doneTiles/$totalTiles tile ($mode)"
+                "$phase $doneTiles/$totalTiles tile ($modeLabel)"
             } else {
-                "$phase ($mode)"
+                "$phase ($modeLabel)"
             }
             lastProgressText = progressText
             statusText.text = "$progressText • ${formatElapsed(elapsedMs)}"
@@ -259,8 +347,9 @@ class MainActivity : AppCompatActivity() {
         isUpscaling = running
         selectButton.isEnabled = !running
         outputDirButton.isEnabled = !running
+        openOutputDirButton.isEnabled = !running && (outputTreeUri != null || lastSavedUri != null)
         upscaleButton.isEnabled = true
-        upscaleButton.text = if (running) "Hủy" else "Upscale Ultramix 4x"
+        upscaleButton.text = if (running) "Hủy" else "Bắt đầu Upscale 4x"
         if (!running) {
             progressBar.visibility = View.GONE
             progressBar.isIndeterminate = false
@@ -271,6 +360,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun runUpscale() {
         val input = inputFile ?: return
+        val selectedScale = 4
         progressBar.visibility = View.VISIBLE
         progressBar.isIndeterminate = true
         progressBar.progress = 0
@@ -294,6 +384,7 @@ class MainActivity : AppCompatActivity() {
                     tempOutput.absolutePath,
                     param.absolutePath,
                     bin.absolutePath,
+                    selectedScale,
                     this
                 )
 

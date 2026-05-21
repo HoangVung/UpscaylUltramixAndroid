@@ -18,12 +18,13 @@ static bool report_progress(
         int total,
         const char* phase,
         long long elapsedMs,
-        bool usingVulkan
+        const char* modeLabel
 ) {
     if (g_cancel_requested.load()) return false;
     if (!callbackTarget || !progressMethod) return true;
 
     jstring phaseString = env->NewStringUTF(phase);
+    jstring modeString = env->NewStringUTF(modeLabel);
     env->CallVoidMethod(
         callbackTarget,
         progressMethod,
@@ -31,9 +32,10 @@ static bool report_progress(
         (jint)total,
         phaseString,
         (jlong)elapsedMs,
-        (jboolean)usingVulkan
+        modeString
     );
     env->DeleteLocalRef(phaseString);
+    env->DeleteLocalRef(modeString);
 
     if (env->ExceptionCheck()) {
         LOGE("Progress callback threw an exception");
@@ -52,6 +54,7 @@ Java_com_vung_upscaylultramix_MainActivity_upscaleNative(
         jstring outputPath,
         jstring modelParamPath,
         jstring modelBinPath,
+        jint scale,
         jobject callbackTarget
 ) {
     g_cancel_requested.store(false);
@@ -60,7 +63,7 @@ Java_com_vung_upscaylultramix_MainActivity_upscaleNative(
     jmethodID progressMethod = env->GetMethodID(
         callbackClass,
         "onNativeProgress",
-        "(IILjava/lang/String;JZ)V"
+        "(IILjava/lang/String;JLjava/lang/String;)V"
     );
     if (!progressMethod) {
         LOGE("Failed to find onNativeProgress callback");
@@ -72,12 +75,11 @@ Java_com_vung_upscaylultramix_MainActivity_upscaleNative(
     const char *param = env->GetStringUTFChars(modelParamPath, nullptr);
     const char *bin = env->GetStringUTFChars(modelBinPath, nullptr);
 
-    LOGI("Processing: %s -> %s", input, output);
+    LOGI("Processing: %s -> %s (scale=%d)", input, output, scale);
 
     RealESRGAN* engine = new RealESRGAN();
     report_progress(env, callbackTarget ? callbackTarget : thiz, progressMethod, 0, 0,
-                    engine->using_vulkan() ? "Đang tải mô hình AI (Vulkan)" : "Đang tải mô hình AI (CPU)",
-                    0, engine->using_vulkan());
+                    "Đang tải mô hình AI", 0, engine->mode_label());
 
     int load_ret = engine->load(param, bin);
     int result = -1;
@@ -86,8 +88,9 @@ Java_com_vung_upscaylultramix_MainActivity_upscaleNative(
         result = engine->process(
             input,
             output,
-            [env, callbackTarget, thiz, progressMethod](int done, int total, const char* phase, long long elapsedMs, bool usingVulkan) {
-                return report_progress(env, callbackTarget ? callbackTarget : thiz, progressMethod, done, total, phase, elapsedMs, usingVulkan);
+            scale,
+            [env, callbackTarget, thiz, progressMethod](int done, int total, const char* phase, long long elapsedMs, const char* modeLabel) {
+                return report_progress(env, callbackTarget ? callbackTarget : thiz, progressMethod, done, total, phase, elapsedMs, modeLabel);
             },
             g_cancel_requested
         );
