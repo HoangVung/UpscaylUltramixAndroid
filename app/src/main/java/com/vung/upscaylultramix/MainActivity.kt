@@ -3,9 +3,12 @@ package com.vung.upscaylultramix
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.OpenableColumns
 import android.view.View
 import android.widget.*
@@ -27,6 +30,19 @@ class MainActivity : AppCompatActivity() {
 
     private var inputFile: File? = null
     private var outputTreeUri: Uri? = null
+    private var currentTempOutput: File? = null
+    private val uiHandler = Handler(Looper.getMainLooper())
+    @Volatile private var isUpscaling = false
+    @Volatile private var lastProgressText = ""
+    private var upscaleStartedAt = 0L
+
+    private val elapsedTicker = object : Runnable {
+        override fun run() {
+            if (!isUpscaling) return
+            statusText.text = buildStatusWithElapsed(lastProgressText)
+            uiHandler.postDelayed(this, 1000)
+        }
+    }
 
     companion object {
         init {
@@ -38,8 +54,11 @@ class MainActivity : AppCompatActivity() {
         inputPath: String,
         outputPath: String,
         modelParamPath: String,
-        modelBinPath: String
+        modelBinPath: String,
+        callbackTarget: MainActivity
     ): Int
+
+    private external fun cancelNative()
 
     private val pickDirectory =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
@@ -57,9 +76,33 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
             uri ?: return@registerForActivityResult
             val copied = copyUriToCache(uri)
+            
+            // Check size limits
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(copied.absolutePath, options)
+            val w = options.outWidth
+            val h = options.outHeight
+            val pixels = w.toLong() * h
+            val longEdge = if (w > h) w else h
+
+            if (pixels > 6000000 || longEdge > 3000) {
+                statusText.text = "Ảnh quá lớn (${w}x${h}). Giới hạn: tối đa 6M pixels và cạnh dài không quá 3000px."
+                previewImage.setImageDrawable(null)
+                upscaleButton.isEnabled = false
+                inputFile = null
+                return@registerForActivityResult
+            }
+
             inputFile = copied
-            previewImage.setImageURI(Uri.fromFile(copied))
-            statusText.text = "Đã chọn: ${copied.name}"
+            val bmp = decodeSampledBitmap(copied.absolutePath, 1024, 1024)
+            if (bmp != null) {
+                previewImage.setImageBitmap(bmp)
+            } else {
+                previewImage.setImageURI(Uri.fromFile(copied))
+            }
+            statusText.text = "Đã chọn: ${copied.name} (${w}x${h})"
             upscaleButton.isEnabled = true
         }
 
@@ -84,7 +127,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         upscaleButton.setOnClickListener {
-            runUpscale()
+            if (isUpscaling) {
+                cancelNative()
+                lastProgressText = "Đang hủy sau tile hiện tại..."
+                statusText.text = buildStatusWithElapsed(lastProgressText)
+                upscaleButton.isEnabled = false
+            } else {
+                runUpscale()
+            }
         }
 
         val vulkanOk = packageManager.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION)
@@ -123,70 +173,183 @@ class MainActivity : AppCompatActivity() {
         return outFile
     }
 
-    private fun saveToUserDir(tempFile: File): String {
-        val treeUri = outputTreeUri
-        if (treeUri == null) return tempFile.absolutePath
+    private fun saveToUserDir(tempFile: File): Pair<String, Boolean> {
+        val treeUri = outputTreeUri ?: return Pair(tempFile.absolutePath, true)
 
         try {
             val docTree = DocumentFile.fromTreeUri(this, treeUri)
             val fileName = tempFile.name
             val targetFile = docTree?.createFile("image/png", fileName)
-            if (targetFile != null) {
-                contentResolver.openOutputStream(targetFile.uri, "w")?.use { out ->
-                    tempFile.inputStream().use { inp ->
-                        inp.copyTo(out)
-                    }
+                ?: return Pair("Không tạo được file trong thư mục đích.", false)
+            val outStream = contentResolver.openOutputStream(targetFile.uri, "w")
+                ?: return Pair("Không mở được output stream cho file đích.", false)
+            outStream.use { out ->
+                tempFile.inputStream().use { inp ->
+                    inp.copyTo(out)
                 }
-                return "Đã lưu vào thư mục đã chọn: $fileName"
             }
+            return Pair("Đã lưu vào thư mục đã chọn: $fileName", true)
         } catch (e: Exception) {
-            // fallback to temp path
+            return Pair("Lỗi khi copy vào thư mục đích: ${e.message}", false)
         }
-        return tempFile.absolutePath
+    }
+
+    private fun decodeSampledBitmap(path: String, maxW: Int, maxH: Int): Bitmap? {
+        val opts = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeFile(path, opts)
+        if (opts.outWidth <= 0 || opts.outHeight <= 0) return null
+
+        var sampleSize = 1
+        while (opts.outWidth / sampleSize > maxW || opts.outHeight / sampleSize > maxH) {
+            sampleSize *= 2
+        }
+        val decodeOpts = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+        }
+        return BitmapFactory.decodeFile(path, decodeOpts)
+    }
+
+    fun onNativeProgress(
+        doneTiles: Int,
+        totalTiles: Int,
+        phase: String,
+        elapsedMs: Long,
+        usingVulkan: Boolean
+    ) {
+        runOnUiThread {
+            val mode = if (usingVulkan) "Vulkan" else "CPU"
+            val progressText = if (totalTiles > 0) {
+                "$phase $doneTiles/$totalTiles tile ($mode)"
+            } else {
+                "$phase ($mode)"
+            }
+            lastProgressText = progressText
+            statusText.text = "$progressText • ${formatElapsed(elapsedMs)}"
+
+            progressBar.visibility = View.VISIBLE
+            if (totalTiles > 0) {
+                progressBar.isIndeterminate = false
+                progressBar.max = totalTiles
+                progressBar.progress = doneTiles.coerceIn(0, totalTiles)
+            } else {
+                progressBar.isIndeterminate = true
+            }
+        }
+    }
+
+    private fun buildStatusWithElapsed(baseText: String): String {
+        val elapsedMs = if (upscaleStartedAt > 0L) {
+            System.currentTimeMillis() - upscaleStartedAt
+        } else {
+            0L
+        }
+        return "$baseText • ${formatElapsed(elapsedMs)}"
+    }
+
+    private fun formatElapsed(elapsedMs: Long): String {
+        val totalSeconds = (elapsedMs / 1000).coerceAtLeast(0)
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return if (minutes > 0) "${minutes} phút ${seconds}s" else "${seconds}s"
+    }
+
+    private fun setRunningUi(running: Boolean) {
+        isUpscaling = running
+        selectButton.isEnabled = !running
+        outputDirButton.isEnabled = !running
+        upscaleButton.isEnabled = true
+        upscaleButton.text = if (running) "Hủy" else "Upscale Ultramix 4x"
+        if (!running) {
+            progressBar.visibility = View.GONE
+            progressBar.isIndeterminate = false
+            progressBar.progress = 0
+            uiHandler.removeCallbacks(elapsedTicker)
+        }
     }
 
     private fun runUpscale() {
         val input = inputFile ?: return
         progressBar.visibility = View.VISIBLE
-        upscaleButton.isEnabled = false
-        selectButton.isEnabled = false
-        outputDirButton.isEnabled = false
-        statusText.text = "Đang upscale bằng Ultramix 4x..."
+        progressBar.isIndeterminate = true
+        progressBar.progress = 0
+        upscaleStartedAt = System.currentTimeMillis()
+        lastProgressText = "Đang upscale bằng Ultramix 4x..."
+        statusText.text = buildStatusWithElapsed(lastProgressText)
+        setRunningUi(true)
+        uiHandler.post(elapsedTicker)
 
         thread {
+            var tempOutput: File? = null
             try {
                 val param = copyAssetToFile("models/ultramix-balanced-4x.param", "ultramix-balanced-4x.param")
                 val bin = copyAssetToFile("models/ultramix-balanced-4x.bin", "ultramix-balanced-4x.bin")
                 val tempDir = getExternalFilesDir(null) ?: filesDir
-                val tempOutput = File(tempDir, "ultramix_${System.currentTimeMillis()}.png")
+                tempOutput = File(tempDir, "ultramix_${System.currentTimeMillis()}.png")
+                currentTempOutput = tempOutput
 
                 val result = upscaleNative(
                     input.absolutePath,
                     tempOutput.absolutePath,
                     param.absolutePath,
-                    bin.absolutePath
+                    bin.absolutePath,
+                    this
                 )
 
                 runOnUiThread {
-                    progressBar.visibility = View.GONE
-                    selectButton.isEnabled = true
-                    upscaleButton.isEnabled = true
-                    outputDirButton.isEnabled = true
-
-                    if (result == 0 && tempOutput.exists()) {
-                        val displayPath = saveToUserDir(tempOutput)
-                        previewImage.setImageBitmap(BitmapFactory.decodeFile(tempOutput.absolutePath))
-                        statusText.text = "Xong! $displayPath"
-                    } else {
-                        statusText.text = "Upscale lỗi. Mã lỗi: $result"
+                    setRunningUi(false)
+                    val outputFile = tempOutput
+                    if (outputFile == null) {
+                        statusText.text = "Upscale thất bại: không tìm thấy file tạm."
+                        currentTempOutput = null
+                        return@runOnUiThread
                     }
+
+                    val minValidSize = 1024L // 1KB minimum, 63B is corrupt
+                    if (result == 0 && outputFile.exists() && outputFile.length() >= minValidSize) {
+                        val bmp = decodeSampledBitmap(outputFile.absolutePath, 1024, 1024)
+                        if (bmp != null) {
+                            statusText.text = "Đang lưu vào thư mục..."
+                            val (displayPath, saveOk) = saveToUserDir(outputFile)
+                            previewImage.setImageBitmap(bmp)
+                            if (saveOk) {
+                                statusText.text = "Xong! $displayPath"
+                            } else {
+                                statusText.text = "Upscale thành công nhưng lưu file lỗi: $displayPath"
+                            }
+                        } else {
+                            outputFile.delete()
+                            statusText.text = "Upscale thất bại: file output không decode được thành bitmap (có thể file hỏng). Mã: $result"
+                        }
+                    } else {
+                        val reason = when (result) {
+                            -1 -> "Không tải được mô hình AI (file .param hoặc .bin hỏng)"
+                            -2 -> "Không đọc được định dạng ảnh đầu vào"
+                            -3 -> "Lỗi ghi file kết quả đầu ra"
+                            -4 -> "Lỗi nạp dữ liệu đầu vào (input tensor)"
+                            -5 -> "GPU/CPU không xử lý được tile - thử chọn ảnh nhỏ hơn"
+                            -7 -> "Kết quả xử lý rỗng hoặc kích thước không hợp lệ"
+                            -8 -> "Không đủ bộ nhớ RAM để xử lý ảnh"
+                            -9 -> "Ảnh vượt quá giới hạn kích thước (tối đa 6M pixels hoặc cạnh dài 3000px)"
+                            -10 -> "Đã hủy xử lý theo yêu cầu"
+                            -101 -> "Không thể khởi động mô hình AI"
+                            else -> when {
+                                !outputFile.exists() -> "file output không tồn tại"
+                                outputFile.length() < minValidSize -> "file output quá nhỏ (${outputFile.length()} bytes, nghi ngờ file hỏng)"
+                                else -> "mã lỗi native: $result"
+                            }
+                        }
+                        if (outputFile.exists()) outputFile.delete()
+                        statusText.text = "Upscale thất bại: $reason"
+                    }
+                    currentTempOutput = null
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    progressBar.visibility = View.GONE
-                    selectButton.isEnabled = true
-                    upscaleButton.isEnabled = true
-                    outputDirButton.isEnabled = true
+                    setRunningUi(false)
+                    tempOutput?.delete()
+                    currentTempOutput = null
                     statusText.text = "Lỗi: ${e.message}"
                 }
             }
