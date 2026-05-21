@@ -1,59 +1,86 @@
-# PDF Merger App
+# Upscayl Ultramix Android
 
-Ứng dụng nhỏ dùng để ghép nhiều file PDF thành một file PDF duy nhất.
+Ứng dụng Android tối giản để upscale ảnh bằng model `ultramix-balanced-4x`.
 
-## Chức năng
+## Mục tiêu
 
-- Chọn nhiều file PDF.
-- Kéo thả file PDF vào giao diện.
-- Sắp xếp thứ tự ghép.
-- Xóa file khỏi danh sách.
-- Hiển thị tiến trình ghép.
-- Xuất ra một file PDF duy nhất.
+Repo này chỉ dành cho app Android Upscayl Ultramix. Các file của project khác như PDF Merger/PySide6/PyInstaller đã được loại bỏ để tránh trộn repo.
 
-## Công nghệ sử dụng
+## Chức năng hiện có
 
-- Python
-- PySide6
-- pypdf
-- PyInstaller
+- Giao diện Android Kotlin.
+- Chọn ảnh từ máy.
+- Chọn thư mục lưu kết quả bằng Android Storage Access Framework.
+- Copy model từ `assets/models` vào bộ nhớ app.
+- JNI bridge để gọi native engine.
+- CMake build native library.
+- Native RealESRGAN/NCNN pipeline có tile processing, progress callback, cancel và fallback CPU/GPU.
 
-## Cài đặt thư viện
+## Model cần có
 
-```bash
-pip install pyside6 pypdf
-```
-
-## Chạy chương trình
-
-```bash
-python pdf_merger_modern.py
-```
-
-## Đóng gói thành file EXE trên Windows
-
-Cài PyInstaller:
-
-```bash
-pip install pyinstaller
-```
-
-Build ứng dụng:
-
-```bash
-python -m PyInstaller --onefile --windowed --name "PDF Merger" --collect-all pypdf --collect-all PySide6 pdf_merger_modern.py
-```
-
-Hoặc chạy file:
+Copy 2 file model sau vào thư mục:
 
 ```text
-build_windows.bat
+app/src/main/assets/models/
 ```
 
-File kết quả sẽ nằm trong thư mục `dist/`.
+Tên file cần đúng:
 
-## Ghi chú
+```text
+ultramix-balanced-4x.param
+ultramix-balanced-4x.bin
+```
 
-Không nên đưa thư mục `build/`, `dist/` và file `.spec` lên GitHub vì đây là các file sinh ra khi đóng gói.
+Có thể lấy từ repo Upscayl desktop của bạn, ví dụ:
 
-Nếu file `.exe` báo thiếu thư viện `pypdf`, hãy build lại bằng lệnh có `--collect-all pypdf`.
+```text
+D:\GitHub\upscayl\resources\models\ultramix-balanced-4x.param
+D:\GitHub\upscayl\resources\models\ultramix-balanced-4x.bin
+```
+
+## Native dependencies
+
+Project dùng NCNN Android Vulkan. CMake đang trỏ tới:
+
+```text
+app/src/main/cpp/ncnn-sdk/${ANDROID_ABI}/lib/cmake/ncnn
+```
+
+Cần giải nén NCNN Android SDK tương ứng vào:
+
+```text
+app/src/main/cpp/ncnn-sdk/arm64-v8a/
+```
+
+## Mở bằng Android Studio
+
+1. Mở Android Studio.
+2. Chọn **File > Open**.
+3. Chọn thư mục `UpscaylUltramixAndroid`.
+4. Sync Gradle.
+5. Kiểm tra `local.properties` đã trỏ đúng Android SDK.
+6. Build APK.
+
+## Cấu trúc chính
+
+```text
+app/src/main/java/com/vung/upscaylultramix/MainActivity.kt
+app/src/main/cpp/CMakeLists.txt
+app/src/main/cpp/upscaler_jni.cpp
+app/src/main/cpp/realesrgan.cpp
+app/src/main/cpp/realesrgan.h
+app/src/main/res/layout/activity_main.xml
+```
+
+## Ghi chú build
+
+- Project đang dùng `compileSdk 35`, `minSdk 26`, `targetSdk 35`.
+- Native ABI hiện giới hạn ở `arm64-v8a`.
+- NDK đang cấu hình `28.2.13676358`.
+- Java/Kotlin target đang là JVM 21.
+
+## Việc cần làm tiếp theo
+
+- Thêm chế độ `Text Enhance` để làm nét chữ/tài liệu.
+- Thêm lựa chọn mode trong UI: Standard Upscale, Text Enhance, Text Upscale.
+- Tối ưu giới hạn kích thước ảnh theo RAM thực tế của thiết bị.
