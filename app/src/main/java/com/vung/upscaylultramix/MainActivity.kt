@@ -107,7 +107,7 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
             uri ?: return@registerForActivityResult
             val copied = copyUriToCache(uri)
-            
+
             val options = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
@@ -186,8 +186,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (!ensureNativeLoaded()) {
-            statusText.text = "App đã mở được, nhưng chưa tải được thư viện xử lý ảnh native. Lỗi: ${getNativeLoadError()}"
-            upscaleButton.isEnabled = false
+            statusText.text = "Chưa có thư viện NCNN/Vulkan native. App sẽ dùng chế độ Android fallback 4x."
         }
     }
 
@@ -333,6 +332,40 @@ class MainActivity : AppCompatActivity() {
         return BitmapFactory.decodeFile(path, decodeOpts)
     }
 
+    private fun upscaleWithAndroidFallback(inputPath: String, outputFile: File, scale: Int) {
+        val source = BitmapFactory.decodeFile(inputPath)
+            ?: throw Exception("Không đọc được ảnh đầu vào bằng Android Bitmap.")
+
+        try {
+            val targetWidth = source.width * scale
+            val targetHeight = source.height * scale
+            val outputPixels = targetWidth.toLong() * targetHeight.toLong()
+            if (outputPixels > 36000000L) {
+                throw Exception("Ảnh quá lớn cho chế độ fallback (${targetWidth}x${targetHeight}). Hãy dùng ảnh nhỏ hơn hoặc bổ sung native NCNN/Vulkan.")
+            }
+
+            runOnUiThread {
+                lastProgressText = "Đang phóng to ảnh bằng Android fallback 4x..."
+                statusText.text = buildStatusWithElapsed(lastProgressText)
+            }
+
+            val scaled = Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true)
+            try {
+                FileOutputStream(outputFile).use { out ->
+                    if (!scaled.compress(Bitmap.CompressFormat.PNG, 100, out)) {
+                        throw Exception("Không ghi được file PNG kết quả.")
+                    }
+                }
+            } finally {
+                if (scaled !== source) scaled.recycle()
+            }
+        } catch (e: OutOfMemoryError) {
+            throw Exception("Không đủ RAM cho chế độ fallback. Hãy thử ảnh nhỏ hơn.")
+        } finally {
+            source.recycle()
+        }
+    }
+
     fun onNativeProgress(
         doneTiles: Int,
         totalTiles: Int,
@@ -392,19 +425,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun runUpscale() {
-        if (!ensureNativeLoaded()) {
-            statusText.text = "Không thể upscale vì thiếu thư viện native: ${getNativeLoadError()}"
-            upscaleButton.isEnabled = false
-            return
-        }
-
         val input = inputFile ?: return
         val selectedScale = 4
+        val nativeReady = ensureNativeLoaded()
+
         progressBar.visibility = View.VISIBLE
         progressBar.isIndeterminate = true
         progressBar.progress = 0
         upscaleStartedAt = System.currentTimeMillis()
-        lastProgressText = "Đang upscale bằng Ultramix 4x..."
+        lastProgressText = if (nativeReady) {
+            "Đang upscale bằng Ultramix NCNN/Vulkan 4x..."
+        } else {
+            "Đang upscale bằng Android fallback 4x..."
+        }
         statusText.text = buildStatusWithElapsed(lastProgressText)
         setRunningUi(true)
         uiHandler.post(elapsedTicker)
@@ -412,20 +445,25 @@ class MainActivity : AppCompatActivity() {
         thread {
             var tempOutput: File? = null
             try {
-                val param = copyAssetToFile("models/ultramix-balanced-4x.param", "ultramix-balanced-4x.param")
-                val bin = copyAssetToFile("models/ultramix-balanced-4x.bin", "ultramix-balanced-4x.bin")
                 val tempDir = getExternalFilesDir(null) ?: filesDir
                 tempOutput = File(tempDir, "ultramix_${System.currentTimeMillis()}.png")
                 currentTempOutput = tempOutput
 
-                val result = upscaleNative(
-                    input.absolutePath,
-                    tempOutput.absolutePath,
-                    param.absolutePath,
-                    bin.absolutePath,
-                    selectedScale,
-                    this
-                )
+                val result = if (nativeReady) {
+                    val param = copyAssetToFile("models/ultramix-balanced-4x.param", "ultramix-balanced-4x.param")
+                    val bin = copyAssetToFile("models/ultramix-balanced-4x.bin", "ultramix-balanced-4x.bin")
+                    upscaleNative(
+                        input.absolutePath,
+                        tempOutput.absolutePath,
+                        param.absolutePath,
+                        bin.absolutePath,
+                        selectedScale,
+                        this
+                    )
+                } else {
+                    upscaleWithAndroidFallback(input.absolutePath, tempOutput, selectedScale)
+                    0
+                }
 
                 runOnUiThread {
                     setRunningUi(false)
@@ -444,7 +482,8 @@ class MainActivity : AppCompatActivity() {
                             val (displayPath, saveOk) = saveToUserDir(outputFile)
                             previewImage.setImageBitmap(bmp)
                             if (saveOk) {
-                                statusText.text = "Xong! $displayPath"
+                                val mode = if (nativeReady) "NCNN/Vulkan" else "Android fallback"
+                                statusText.text = "Xong bằng $mode! $displayPath"
                             } else {
                                 statusText.text = "Upscale thành công nhưng lưu file lỗi: $displayPath"
                             }
