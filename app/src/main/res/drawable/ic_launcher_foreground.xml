@@ -1,0 +1,37 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Main photo tile -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M25,31C25,27.7 27.7,25 31,25H70C73.3,25 76,27.7 76,31V70C76,73.3 73.3,76 70,76H31C27.7,76 25,73.3 25,70V31Z" />
+    <path
+        android:fillColor="#E8F2FF"
+        android:pathData="M31,31H70V61L58,48L48,59L42,53L31,65V31Z" />
+    <path
+        android:fillColor="#2F7DFF"
+        android:pathData="M35,70L48,55L55,62L62,54L70,63V70H35Z" />
+    <path
+        android:fillColor="#0B1220"
+        android:fillAlpha="0.18"
+        android:pathData="M31,25H70C73.3,25 76,27.7 76,31V70C76,73.3 73.3,76 70,76H31C27.7,76 25,73.3 25,70V31C25,27.7 27.7,25 31,25ZM31,30C30.4,30 30,30.4 30,31V70C30,70.6 30.4,71 31,71H70C70.6,71 71,70.6 71,70V31C71,30.4 70.6,30 70,30H31Z" />
+
+    <!-- Upscale arrow -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M67,34L86,34L86,53L80,47L62,65L56,59L74,41L67,34Z" />
+    <path
+        android:fillColor="#2F7DFF"
+        android:pathData="M70,38L82,38L82,50L79,47L62,64L58,60L75,43L70,38Z" />
+
+    <!-- Sharpness sparkle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M81,61L84,68L91,71L84,74L81,81L78,74L71,71L78,68L81,61Z" />
+    <path
+        android:fillColor="#BFE3FF"
+        android:pathData="M82,19L84,24L89,26L84,28L82,33L80,28L75,26L80,24L82,19Z" />
+</vector>
