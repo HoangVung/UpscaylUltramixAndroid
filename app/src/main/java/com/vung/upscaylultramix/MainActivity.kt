@@ -50,8 +50,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        init {
-            System.loadLibrary("ultramix_jni")
+        @Volatile private var nativeLoadAttempted = false
+        @Volatile private var nativeAvailable = false
+        @Volatile private var nativeLoadError: String? = null
+
+        fun ensureNativeLoaded(): Boolean {
+            if (nativeLoadAttempted) return nativeAvailable
+            nativeLoadAttempted = true
+            return try {
+                System.loadLibrary("ultramix_jni")
+                nativeAvailable = true
+                nativeLoadError = null
+                true
+            } catch (e: UnsatisfiedLinkError) {
+                nativeAvailable = false
+                nativeLoadError = e.message ?: "Không tìm thấy thư viện native ultramix_jni."
+                false
+            } catch (e: Throwable) {
+                nativeAvailable = false
+                nativeLoadError = e.message ?: "Không tải được thư viện native."
+                false
+            }
+        }
+
+        fun getNativeLoadError(): String {
+            return nativeLoadError ?: "Thiếu hoặc lỗi thư viện native libultramix_jni.so."
         }
     }
 
@@ -85,7 +108,6 @@ class MainActivity : AppCompatActivity() {
             uri ?: return@registerForActivityResult
             val copied = copyUriToCache(uri)
             
-            // Check size limits
             val options = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
@@ -141,7 +163,13 @@ class MainActivity : AppCompatActivity() {
 
         upscaleButton.setOnClickListener {
             if (isUpscaling) {
-                cancelNative()
+                if (ensureNativeLoaded()) {
+                    try {
+                        cancelNative()
+                    } catch (e: UnsatisfiedLinkError) {
+                        statusText.text = "Không hủy được vì thiếu thư viện native: ${getNativeLoadError()}"
+                    }
+                }
                 lastProgressText = "Đang hủy sau tile hiện tại..."
                 statusText.text = buildStatusWithElapsed(lastProgressText)
                 upscaleButton.isEnabled = false
@@ -155,6 +183,11 @@ class MainActivity : AppCompatActivity() {
         val vulkanOk = packageManager.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION)
         if (!vulkanOk) {
             statusText.text = "Máy có thể không hỗ trợ Vulkan đầy đủ. App vẫn mở được nhưng upscale có thể lỗi."
+        }
+
+        if (!ensureNativeLoaded()) {
+            statusText.text = "App đã mở được, nhưng chưa tải được thư viện xử lý ảnh native. Lỗi: ${getNativeLoadError()}"
+            upscaleButton.isEnabled = false
         }
     }
 
@@ -359,6 +392,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun runUpscale() {
+        if (!ensureNativeLoaded()) {
+            statusText.text = "Không thể upscale vì thiếu thư viện native: ${getNativeLoadError()}"
+            upscaleButton.isEnabled = false
+            return
+        }
+
         val input = inputFile ?: return
         val selectedScale = 4
         progressBar.visibility = View.VISIBLE
@@ -397,7 +436,7 @@ class MainActivity : AppCompatActivity() {
                         return@runOnUiThread
                     }
 
-                    val minValidSize = 1024L // 1KB minimum, 63B is corrupt
+                    val minValidSize = 1024L
                     if (result == 0 && outputFile.exists() && outputFile.length() >= minValidSize) {
                         val bmp = decodeSampledBitmap(outputFile.absolutePath, 1024, 1024)
                         if (bmp != null) {
@@ -442,6 +481,13 @@ class MainActivity : AppCompatActivity() {
                     tempOutput?.delete()
                     currentTempOutput = null
                     statusText.text = "Lỗi: ${e.message}"
+                }
+            } catch (e: UnsatisfiedLinkError) {
+                runOnUiThread {
+                    setRunningUi(false)
+                    tempOutput?.delete()
+                    currentTempOutput = null
+                    statusText.text = "Lỗi native: ${e.message}"
                 }
             }
         }
