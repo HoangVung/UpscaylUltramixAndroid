@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Ultramix Upscaler</string>
+    <string name="preview_image">Ảnh xem trước</string>
 </resources>
