@@ -29,8 +29,8 @@ class TfliteModelRunner(modelFile: File, preferredRuntime: String) : AutoCloseab
     private val outputDataType: DataType
 
     init {
-        val inputShape = interpreter.getInputTensor(0).shape() // [1, H, W, C]
-        val outputShape = interpreter.getOutputTensor(0).shape() // [1, H_out, W_out, C]
+        val inputShape = interpreter.getInputTensor(0).shape()
+        val outputShape = interpreter.getOutputTensor(0).shape()
 
         inputHeight = inputShape[1]
         inputWidth = inputShape[2]
@@ -38,9 +38,8 @@ class TfliteModelRunner(modelFile: File, preferredRuntime: String) : AutoCloseab
 
         outputHeight = outputShape[1]
         outputWidth = outputShape[2]
-
         outputScale = outputWidth / inputWidth
-        
+
         inputDataType = interpreter.getInputTensor(0).dataType()
         outputDataType = interpreter.getOutputTensor(0).dataType()
     }
@@ -48,29 +47,24 @@ class TfliteModelRunner(modelFile: File, preferredRuntime: String) : AutoCloseab
     fun runInference(tileBitmap: Bitmap): Bitmap {
         val inH = inputHeight
         val inW = inputWidth
-
-        // 1. Prepare input buffer
         val pixels = IntArray(inH * inW)
         tileBitmap.getPixels(pixels, 0, inW, 0, 0, inW, inH)
 
         val inputBuffer = when (inputDataType) {
             DataType.FLOAT32 -> {
-                val buf = ByteBuffer.allocateDirect(1 * inH * inW * 3 * 4).apply {
+                val buf = ByteBuffer.allocateDirect(inH * inW * 3 * 4).apply {
                     order(ByteOrder.nativeOrder())
                 }
                 for (pixel in pixels) {
-                    val r = ((pixel shr 16) and 0xFF) / 255.0f
-                    val g = ((pixel shr 8) and 0xFF) / 255.0f
-                    val b = (pixel and 0xFF) / 255.0f
-                    buf.putFloat(r)
-                    buf.putFloat(g)
-                    buf.putFloat(b)
+                    buf.putFloat(((pixel shr 16) and 0xFF) / 255.0f)
+                    buf.putFloat(((pixel shr 8) and 0xFF) / 255.0f)
+                    buf.putFloat((pixel and 0xFF) / 255.0f)
                 }
                 buf.rewind()
                 buf
             }
             DataType.INT8 -> {
-                val buf = ByteBuffer.allocateDirect(1 * inH * inW * 3).apply {
+                val buf = ByteBuffer.allocateDirect(inH * inW * 3).apply {
                     order(ByteOrder.nativeOrder())
                 }
                 val params = interpreter.getInputTensor(0).quantizationParams()
@@ -88,7 +82,7 @@ class TfliteModelRunner(modelFile: File, preferredRuntime: String) : AutoCloseab
                 buf
             }
             DataType.UINT8 -> {
-                val buf = ByteBuffer.allocateDirect(1 * inH * inW * 3).apply {
+                val buf = ByteBuffer.allocateDirect(inH * inW * 3).apply {
                     order(ByteOrder.nativeOrder())
                 }
                 val params = interpreter.getInputTensor(0).quantizationParams()
@@ -108,28 +102,27 @@ class TfliteModelRunner(modelFile: File, preferredRuntime: String) : AutoCloseab
             else -> throw IllegalArgumentException("Unsupported input tensor data type: $inputDataType")
         }
 
-        // 2. Prepare output buffer
         val outH = outputHeight
         val outW = outputWidth
         val outPixels = IntArray(outH * outW)
 
         when (outputDataType) {
             DataType.FLOAT32 -> {
-                val outputBuffer = ByteBuffer.allocateDirect(1 * outH * outW * 3 * 4).apply {
+                val outputBuffer = ByteBuffer.allocateDirect(outH * outW * 3 * 4).apply {
                     order(ByteOrder.nativeOrder())
                 }
                 interpreter.run(inputBuffer, outputBuffer)
                 outputBuffer.rewind()
 
                 for (i in 0 until outH * outW) {
-                    val r = (outputBuffer.float.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
-                    val g = (outputBuffer.float.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
-                    val b = (outputBuffer.float.coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+                    val r = (outputBuffer.getFloat().coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+                    val g = (outputBuffer.getFloat().coerceIn(0.0f, 1.0f) * 255.0f).toInt()
+                    val b = (outputBuffer.getFloat().coerceIn(0.0f, 1.0f) * 255.0f).toInt()
                     outPixels[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
                 }
             }
             DataType.INT8 -> {
-                val outputBuffer = ByteBuffer.allocateDirect(1 * outH * outW * 3).apply {
+                val outputBuffer = ByteBuffer.allocateDirect(outH * outW * 3).apply {
                     order(ByteOrder.nativeOrder())
                 }
                 interpreter.run(inputBuffer, outputBuffer)
@@ -143,7 +136,6 @@ class TfliteModelRunner(modelFile: File, preferredRuntime: String) : AutoCloseab
                     val qr = outputBuffer.get().toInt()
                     val qg = outputBuffer.get().toInt()
                     val qb = outputBuffer.get().toInt()
-
                     val r = (((qr - zeroPoint) * scale).coerceIn(0.0f, 1.0f) * 255.0f).toInt()
                     val g = (((qg - zeroPoint) * scale).coerceIn(0.0f, 1.0f) * 255.0f).toInt()
                     val b = (((qb - zeroPoint) * scale).coerceIn(0.0f, 1.0f) * 255.0f).toInt()
@@ -151,7 +143,7 @@ class TfliteModelRunner(modelFile: File, preferredRuntime: String) : AutoCloseab
                 }
             }
             DataType.UINT8 -> {
-                val outputBuffer = ByteBuffer.allocateDirect(1 * outH * outW * 3).apply {
+                val outputBuffer = ByteBuffer.allocateDirect(outH * outW * 3).apply {
                     order(ByteOrder.nativeOrder())
                 }
                 interpreter.run(inputBuffer, outputBuffer)
@@ -165,7 +157,6 @@ class TfliteModelRunner(modelFile: File, preferredRuntime: String) : AutoCloseab
                     val qr = outputBuffer.get().toInt() and 0xFF
                     val qg = outputBuffer.get().toInt() and 0xFF
                     val qb = outputBuffer.get().toInt() and 0xFF
-
                     val r = (((qr - zeroPoint) * scale).coerceIn(0.0f, 1.0f) * 255.0f).toInt()
                     val g = (((qg - zeroPoint) * scale).coerceIn(0.0f, 1.0f) * 255.0f).toInt()
                     val b = (((qb - zeroPoint) * scale).coerceIn(0.0f, 1.0f) * 255.0f).toInt()
