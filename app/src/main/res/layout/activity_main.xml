@@ -24,7 +24,7 @@
             android:paddingTop="4dp"
             android:paddingEnd="10dp"
             android:paddingBottom="4dp"
-            android:text="NCNN • Vulkan"
+            android:text="Fallback 4x • Native optional"
             android:textColor="@color/app_primary"
             android:textSize="12sp"
             android:textStyle="bold" />
@@ -45,7 +45,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:lineSpacingExtra="3dp"
-            android:text="Chọn ảnh để upscale bằng Ultramix 4x."
+            android:text="Chọn ảnh để upscale 4x. Nếu thiếu NCNN/Vulkan native, app sẽ dùng Android fallback."
             android:textColor="@color/app_on_surface_muted"
             android:textSize="15sp" />
 
