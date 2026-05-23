@@ -16,6 +16,7 @@ import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.documentfile.provider.DocumentFile
+import com.google.android.material.progressindicator.LinearProgressIndicator
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.concurrent.thread
@@ -23,7 +24,7 @@ import kotlin.concurrent.thread
 class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var previewImage: ImageView
-    private lateinit var progressBar: ProgressBar
+    private lateinit var progressBar: LinearProgressIndicator
     private lateinit var selectButton: Button
     private lateinit var upscaleButton: Button
     private lateinit var outputDirButton: Button
