@@ -6,9 +6,9 @@
 
 ## Tiếng Việt
 
-Ứng dụng Android tối giản để upscale ảnh bằng mô hình Qualcomm XLSR chạy qua TensorFlow Lite. App hiện ưu tiên chạy bằng NNAPI/NPU, có fallback sang GPU hoặc CPU nếu thiết bị không hỗ trợ runtime mong muốn.
+**Qualcomm XLSR Upscaler** là ứng dụng Android tối giản để upscale ảnh bằng mô hình Qualcomm XLSR chạy qua TensorFlow Lite. App hiện ưu tiên chạy bằng NNAPI/NPU, có fallback sang GPU hoặc CPU nếu thiết bị không hỗ trợ runtime mong muốn.
 
-> Tên repo vẫn là `UpscaylUltramixAndroid`, nhưng tên app theo code hiện tại là **Qualcomm XLSR Upscaler**.
+Repo hiện tại: `HoangVung/QualcommXlsrUpscaler`.
 
 ### Chức năng hiện có
 
@@ -87,7 +87,7 @@ Nếu không có `xlsr_4x.tflite`, chế độ 4x sẽ dùng pipeline `XLSR 3x +
 
 1. Mở Android Studio.
 2. Chọn **File > Open**.
-3. Chọn thư mục `UpscaylUltramixAndroid`.
+3. Chọn thư mục `QualcommXlsrUpscaler`.
 4. Chờ Gradle Sync hoàn tất.
 5. Kiểm tra `local.properties` đã trỏ đúng Android SDK.
 6. Đảm bảo model TFLite nằm trong `app/src/main/assets/models/`.
@@ -122,9 +122,9 @@ Repo có thể còn một số file native/CMake từ hướng thử nghiệm NC
 
 ## English
 
-A minimal Android image upscaler powered by Qualcomm XLSR models through TensorFlow Lite. The app prefers NNAPI/NPU acceleration and falls back to GPU or CPU when the selected runtime is unavailable.
+**Qualcomm XLSR Upscaler** is a minimal Android image upscaler powered by Qualcomm XLSR models through TensorFlow Lite. The app prefers NNAPI/NPU acceleration and falls back to GPU or CPU when the selected runtime is unavailable.
 
-> The repository name is still `UpscaylUltramixAndroid`, but the current app name in code is **Qualcomm XLSR Upscaler**.
+Current repository: `HoangVung/QualcommXlsrUpscaler`.
 
 ### Current features
 
@@ -203,7 +203,7 @@ If `xlsr_4x.tflite` is missing, 4x mode uses `XLSR 3x + resize up`.
 
 1. Open Android Studio.
 2. Select **File > Open**.
-3. Choose the `UpscaylUltramixAndroid` folder.
+3. Choose the `QualcommXlsrUpscaler` folder.
 4. Wait for Gradle Sync to finish.
 5. Check that `local.properties` points to the correct Android SDK.
 6. Make sure the TFLite model exists in `app/src/main/assets/models/`.
