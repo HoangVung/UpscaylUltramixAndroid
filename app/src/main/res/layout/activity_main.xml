@@ -24,7 +24,7 @@
             android:paddingTop="4dp"
             android:paddingEnd="10dp"
             android:paddingBottom="4dp"
-            android:text="Fallback 4x • Native optional"
+            android:text="TFLite • NPU/NNAPI"
             android:textColor="@color/app_primary"
             android:textSize="12sp"
             android:textStyle="bold" />
@@ -34,9 +34,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:text="Ultramix Upscaler 4x"
+            android:text="Qualcomm XLSR Upscaler"
             android:textColor="@color/app_on_surface"
-            android:textSize="30sp"
+            android:textSize="26sp"
             android:textStyle="bold" />
 
         <TextView
@@ -45,7 +45,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:lineSpacingExtra="3dp"
-            android:text="Chọn ảnh để upscale 4x. Nếu thiếu NCNN/Vulkan native, app sẽ dùng Android fallback."
+            android:text="Chọn ảnh để upscale bằng Qualcomm XLSR."
             android:textColor="@color/app_on_surface_muted"
             android:textSize="15sp" />
 
@@ -54,7 +54,7 @@
             android:layout_height="0dp"
             android:layout_marginTop="18dp"
             android:layout_weight="1"
-            android:minHeight="300dp"
+            android:minHeight="280dp"
             app:cardBackgroundColor="@color/app_preview_background"
             app:cardCornerRadius="8dp"
             app:cardElevation="0dp"
@@ -150,13 +150,103 @@
                         android:textSize="13sp" />
                 </LinearLayout>
 
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Tỷ lệ Upscale"
+                    android:textColor="@color/app_on_surface"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <RadioGroup
+                    android:id="@+id/scaleRadioGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/radio2x"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="2x (Resize từ 3x)"
+                        android:textColor="@color/app_on_surface"
+                        android:textSize="12sp" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/radio3x"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:checked="true"
+                        android:text="3x (Native)"
+                        android:textColor="@color/app_on_surface"
+                        android:textSize="12sp" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/radio4x"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="4x (Resize từ 3x)"
+                        android:textColor="@color/app_on_surface"
+                        android:textSize="12sp" />
+                </RadioGroup>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Bộ xử lý (Runtime)"
+                    android:textColor="@color/app_on_surface"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <RadioGroup
+                    android:id="@+id/runtimeRadioGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/radioNnapi"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1.2"
+                        android:checked="true"
+                        android:text="NNAPI/NPU"
+                        android:textColor="@color/app_on_surface"
+                        android:textSize="12sp" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/radioGpu"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="0.8"
+                        android:text="GPU"
+                        android:textColor="@color/app_on_surface"
+                        android:textSize="12sp" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/radioCpu"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1.0"
+                        android:text="CPU"
+                        android:textColor="@color/app_on_surface"
+                        android:textSize="12sp" />
+                </RadioGroup>
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/upscaleButton"
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="14dp"
                     android:enabled="false"
-                    android:text="Bắt đầu Upscale 4x"
+                    android:text="Bắt đầu Upscale"
                     android:textAllCaps="false"
                     android:textStyle="bold"
                     app:backgroundTint="@color/app_secondary"

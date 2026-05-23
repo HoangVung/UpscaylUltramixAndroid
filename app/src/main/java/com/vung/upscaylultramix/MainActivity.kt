@@ -3,7 +3,6 @@ package com.vung.upscaylultramix
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -30,16 +29,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var outputDirButton: Button
     private lateinit var outputDirText: TextView
     private lateinit var openOutputDirButton: Button
+    
+    private lateinit var scaleRadioGroup: RadioGroup
+    private lateinit var runtimeRadioGroup: RadioGroup
 
     private var lastSavedUri: Uri? = null
-
     private var inputFile: File? = null
     private var outputTreeUri: Uri? = null
-    private var currentTempOutput: File? = null
     private val uiHandler = Handler(Looper.getMainLooper())
     @Volatile private var isUpscaling = false
     @Volatile private var lastProgressText = ""
     private var upscaleStartedAt = 0L
+    
+    private lateinit var upscaleEngine: XlsrUpscaleEngine
 
     private val elapsedTicker = object : Runnable {
         override fun run() {
@@ -48,46 +50,6 @@ class MainActivity : AppCompatActivity() {
             uiHandler.postDelayed(this, 1000)
         }
     }
-
-    companion object {
-        @Volatile private var nativeLoadAttempted = false
-        @Volatile private var nativeAvailable = false
-        @Volatile private var nativeLoadError: String? = null
-
-        fun ensureNativeLoaded(): Boolean {
-            if (nativeLoadAttempted) return nativeAvailable
-            nativeLoadAttempted = true
-            return try {
-                System.loadLibrary("ultramix_jni")
-                nativeAvailable = true
-                nativeLoadError = null
-                true
-            } catch (e: UnsatisfiedLinkError) {
-                nativeAvailable = false
-                nativeLoadError = e.message ?: "Không tìm thấy thư viện native ultramix_jni."
-                false
-            } catch (e: Throwable) {
-                nativeAvailable = false
-                nativeLoadError = e.message ?: "Không tải được thư viện native."
-                false
-            }
-        }
-
-        fun getNativeLoadError(): String {
-            return nativeLoadError ?: "Thiếu hoặc lỗi thư viện native libultramix_jni.so."
-        }
-    }
-
-    private external fun upscaleNative(
-        inputPath: String,
-        outputPath: String,
-        modelParamPath: String,
-        modelBinPath: String,
-        scale: Int,
-        callbackTarget: MainActivity
-    ): Int
-
-    private external fun cancelNative()
 
     private val pickDirectory =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
@@ -107,7 +69,8 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
             uri ?: return@registerForActivityResult
             val copied = copyUriToCache(uri)
-
+            
+            // Check size limits
             val options = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
@@ -140,6 +103,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        upscaleEngine = XlsrUpscaleEngine(this)
+
         statusText = findViewById(R.id.statusText)
         previewImage = findViewById(R.id.previewImage)
         progressBar = findViewById(R.id.progressBar)
@@ -148,6 +113,9 @@ class MainActivity : AppCompatActivity() {
         outputDirButton = findViewById(R.id.outputDirButton)
         outputDirText = findViewById(R.id.outputDirText)
         openOutputDirButton = findViewById(R.id.openOutputDirButton)
+        
+        scaleRadioGroup = findViewById(R.id.scaleRadioGroup)
+        runtimeRadioGroup = findViewById(R.id.runtimeRadioGroup)
 
         selectButton.setOnClickListener {
             pickImage.launch("image/*")
@@ -163,14 +131,8 @@ class MainActivity : AppCompatActivity() {
 
         upscaleButton.setOnClickListener {
             if (isUpscaling) {
-                if (ensureNativeLoaded()) {
-                    try {
-                        cancelNative()
-                    } catch (e: UnsatisfiedLinkError) {
-                        statusText.text = "Không hủy được vì thiếu thư viện native: ${getNativeLoadError()}"
-                    }
-                }
-                lastProgressText = "Đang hủy sau tile hiện tại..."
+                upscaleEngine.cancel()
+                lastProgressText = "Đang hủy..."
                 statusText.text = buildStatusWithElapsed(lastProgressText)
                 upscaleButton.isEnabled = false
             } else {
@@ -178,15 +140,37 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        restoreSavedDirectory()
-
-        val vulkanOk = packageManager.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION)
-        if (!vulkanOk) {
-            statusText.text = "Máy có thể không hỗ trợ Vulkan đầy đủ. App vẫn mở được nhưng upscale có thể lỗi."
+        scaleRadioGroup.setOnCheckedChangeListener { _, _ ->
+            val scaleText = "${getSelectedScale()}x"
+            upscaleButton.text = "Bắt đầu Upscale $scaleText"
         }
 
-        if (!ensureNativeLoaded()) {
-            statusText.text = "Chưa có thư viện NCNN/Vulkan native. App sẽ dùng chế độ Android fallback 4x."
+        restoreSavedDirectory()
+    }
+
+    private fun getSelectedScale(): Int {
+        return when (scaleRadioGroup.checkedRadioButtonId) {
+            R.id.radio2x -> 2
+            R.id.radio3x -> 3
+            R.id.radio4x -> 4
+            else -> 3
+        }
+    }
+
+    private fun getPreferredRuntime(): String {
+        return when (runtimeRadioGroup.checkedRadioButtonId) {
+            R.id.radioNnapi -> "nnapi"
+            R.id.radioGpu -> "gpu"
+            R.id.radioCpu -> "cpu"
+            else -> "nnapi"
+        }
+    }
+
+    private fun getActualRuntimeName(fileName: String): String {
+        return when {
+            fileName.contains("nnapi_npu") -> "NNAPI/NPU"
+            fileName.contains("gpu") -> "GPU"
+            else -> "CPU fallback"
         }
     }
 
@@ -274,22 +258,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun copyAssetToFile(assetPath: String, outName: String): File {
-        val outFile = File(filesDir, outName)
-        if (!outFile.exists() || outFile.length() == 0L) {
-            try {
-                assets.open(assetPath).use { input ->
-                    FileOutputStream(outFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            } catch (e: java.io.FileNotFoundException) {
-                throw Exception("Thiếu model: $assetPath")
-            }
-        }
-        return outFile
-    }
-
     private fun saveToUserDir(tempFile: File): Pair<String, Boolean> {
         val treeUri = outputTreeUri ?: run {
             lastSavedUri = Uri.fromFile(tempFile)
@@ -332,67 +300,6 @@ class MainActivity : AppCompatActivity() {
         return BitmapFactory.decodeFile(path, decodeOpts)
     }
 
-    private fun upscaleWithAndroidFallback(inputPath: String, outputFile: File, scale: Int) {
-        val source = BitmapFactory.decodeFile(inputPath)
-            ?: throw Exception("Không đọc được ảnh đầu vào bằng Android Bitmap.")
-
-        try {
-            val targetWidth = source.width * scale
-            val targetHeight = source.height * scale
-            val outputPixels = targetWidth.toLong() * targetHeight.toLong()
-            if (outputPixels > 36000000L) {
-                throw Exception("Ảnh quá lớn cho chế độ fallback (${targetWidth}x${targetHeight}). Hãy dùng ảnh nhỏ hơn hoặc bổ sung native NCNN/Vulkan.")
-            }
-
-            runOnUiThread {
-                lastProgressText = "Đang phóng to ảnh bằng Android fallback 4x..."
-                statusText.text = buildStatusWithElapsed(lastProgressText)
-            }
-
-            val scaled = Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true)
-            try {
-                FileOutputStream(outputFile).use { out ->
-                    if (!scaled.compress(Bitmap.CompressFormat.PNG, 100, out)) {
-                        throw Exception("Không ghi được file PNG kết quả.")
-                    }
-                }
-            } finally {
-                if (scaled !== source) scaled.recycle()
-            }
-        } catch (e: OutOfMemoryError) {
-            throw Exception("Không đủ RAM cho chế độ fallback. Hãy thử ảnh nhỏ hơn.")
-        } finally {
-            source.recycle()
-        }
-    }
-
-    fun onNativeProgress(
-        doneTiles: Int,
-        totalTiles: Int,
-        phase: String,
-        elapsedMs: Long,
-        modeLabel: String
-    ) {
-        runOnUiThread {
-            val progressText = if (totalTiles > 0) {
-                "$phase $doneTiles/$totalTiles tile ($modeLabel)"
-            } else {
-                "$phase ($modeLabel)"
-            }
-            lastProgressText = progressText
-            statusText.text = "$progressText • ${formatElapsed(elapsedMs)}"
-
-            progressBar.visibility = View.VISIBLE
-            if (totalTiles > 0) {
-                progressBar.isIndeterminate = false
-                progressBar.max = totalTiles
-                progressBar.progress = doneTiles.coerceIn(0, totalTiles)
-            } else {
-                progressBar.isIndeterminate = true
-            }
-        }
-    }
-
     private fun buildStatusWithElapsed(baseText: String): String {
         val elapsedMs = if (upscaleStartedAt > 0L) {
             System.currentTimeMillis() - upscaleStartedAt
@@ -413,9 +320,13 @@ class MainActivity : AppCompatActivity() {
         isUpscaling = running
         selectButton.isEnabled = !running
         outputDirButton.isEnabled = !running
+        scaleRadioGroup.isEnabled = !running
+        runtimeRadioGroup.isEnabled = !running
         openOutputDirButton.isEnabled = !running && (outputTreeUri != null || lastSavedUri != null)
         upscaleButton.isEnabled = true
-        upscaleButton.text = if (running) "Hủy" else "Bắt đầu Upscale 4x"
+        
+        val scaleText = "${getSelectedScale()}x"
+        upscaleButton.text = if (running) "Hủy" else "Bắt đầu Upscale $scaleText"
         if (!running) {
             progressBar.visibility = View.GONE
             progressBar.isIndeterminate = false
@@ -426,109 +337,76 @@ class MainActivity : AppCompatActivity() {
 
     private fun runUpscale() {
         val input = inputFile ?: return
-        val selectedScale = 4
-        val nativeReady = ensureNativeLoaded()
+        val selectedScale = getSelectedScale()
+        val preferredRuntime = getPreferredRuntime()
 
         progressBar.visibility = View.VISIBLE
         progressBar.isIndeterminate = true
         progressBar.progress = 0
         upscaleStartedAt = System.currentTimeMillis()
-        lastProgressText = if (nativeReady) {
-            "Đang upscale bằng Ultramix NCNN/Vulkan 4x..."
-        } else {
-            "Đang upscale bằng Android fallback 4x..."
+
+        val pipelineLabel = when (selectedScale) {
+            2 -> "2x = XLSR 3x + resize down"
+            3 -> "XLSR 3x native"
+            4 -> "4x = XLSR 3x + resize up"
+            else -> "XLSR 3x native"
         }
+
+        lastProgressText = "Đang khởi tạo $pipelineLabel..."
         statusText.text = buildStatusWithElapsed(lastProgressText)
         setRunningUi(true)
         uiHandler.post(elapsedTicker)
 
         thread {
-            var tempOutput: File? = null
-            try {
-                val tempDir = getExternalFilesDir(null) ?: filesDir
-                tempOutput = File(tempDir, "ultramix_${System.currentTimeMillis()}.png")
-                currentTempOutput = tempOutput
-
-                val result = if (nativeReady) {
-                    val param = copyAssetToFile("models/ultramix-balanced-4x.param", "ultramix-balanced-4x.param")
-                    val bin = copyAssetToFile("models/ultramix-balanced-4x.bin", "ultramix-balanced-4x.bin")
-                    upscaleNative(
-                        input.absolutePath,
-                        tempOutput.absolutePath,
-                        param.absolutePath,
-                        bin.absolutePath,
-                        selectedScale,
-                        this
-                    )
-                } else {
-                    upscaleWithAndroidFallback(input.absolutePath, tempOutput, selectedScale)
-                    0
-                }
-
-                runOnUiThread {
-                    setRunningUi(false)
-                    val outputFile = tempOutput
-                    if (outputFile == null) {
-                        statusText.text = "Upscale thất bại: không tìm thấy file tạm."
-                        currentTempOutput = null
-                        return@runOnUiThread
+            val tempDir = getExternalFilesDir(null) ?: filesDir
+            upscaleEngine.execute(
+                input.absolutePath,
+                tempDir,
+                selectedScale,
+                preferredRuntime,
+                object : XlsrUpscaleEngine.EngineCallback {
+                    override fun onProgress(doneTiles: Int, totalTiles: Int, phase: String, runtimeLabel: String) {
+                        runOnUiThread {
+                            val progressText = "$phase $doneTiles/$totalTiles ($runtimeLabel)"
+                            lastProgressText = progressText
+                            val elapsedMs = System.currentTimeMillis() - upscaleStartedAt
+                            statusText.text = "$progressText • ${formatElapsed(elapsedMs)}"
+                            progressBar.visibility = View.VISIBLE
+                            progressBar.isIndeterminate = false
+                            progressBar.max = totalTiles
+                            progressBar.progress = doneTiles
+                        }
                     }
 
-                    val minValidSize = 1024L
-                    if (result == 0 && outputFile.exists() && outputFile.length() >= minValidSize) {
-                        val bmp = decodeSampledBitmap(outputFile.absolutePath, 1024, 1024)
-                        if (bmp != null) {
-                            statusText.text = "Đang lưu vào thư mục..."
-                            val (displayPath, saveOk) = saveToUserDir(outputFile)
-                            previewImage.setImageBitmap(bmp)
-                            if (saveOk) {
-                                val mode = if (nativeReady) "NCNN/Vulkan" else "Android fallback"
-                                statusText.text = "Xong bằng $mode! $displayPath"
+                    override fun onSuccess(outputFile: File, pipelineDescription: String) {
+                        runOnUiThread {
+                            setRunningUi(false)
+                            val bmp = decodeSampledBitmap(outputFile.absolutePath, 1024, 1024)
+                            if (bmp != null) {
+                                statusText.text = "Đang lưu vào thư mục..."
+                                val (displayPath, saveOk) = saveToUserDir(outputFile)
+                                previewImage.setImageBitmap(bmp)
+                                if (saveOk) {
+                                    val runtimeName = getActualRuntimeName(outputFile.name)
+                                    statusText.text = "Xong: $pipelineDescription · $runtimeName"
+                                } else {
+                                    statusText.text = "Upscale thành công nhưng lưu file lỗi: $displayPath"
+                                }
                             } else {
-                                statusText.text = "Upscale thành công nhưng lưu file lỗi: $displayPath"
-                            }
-                        } else {
-                            outputFile.delete()
-                            statusText.text = "Upscale thất bại: file output không decode được thành bitmap (có thể file hỏng). Mã: $result"
-                        }
-                    } else {
-                        val reason = when (result) {
-                            -1 -> "Không tải được mô hình AI (file .param hoặc .bin hỏng)"
-                            -2 -> "Không đọc được định dạng ảnh đầu vào"
-                            -3 -> "Lỗi ghi file kết quả đầu ra"
-                            -4 -> "Lỗi nạp dữ liệu đầu vào (input tensor)"
-                            -5 -> "GPU/CPU không xử lý được tile - thử chọn ảnh nhỏ hơn"
-                            -7 -> "Kết quả xử lý rỗng hoặc kích thước không hợp lệ"
-                            -8 -> "Không đủ bộ nhớ RAM để xử lý ảnh"
-                            -9 -> "Ảnh vượt quá giới hạn kích thước (tối đa 6M pixels hoặc cạnh dài 3000px)"
-                            -10 -> "Đã hủy xử lý theo yêu cầu"
-                            -101 -> "Không thể khởi động mô hình AI"
-                            else -> when {
-                                !outputFile.exists() -> "file output không tồn tại"
-                                outputFile.length() < minValidSize -> "file output quá nhỏ (${outputFile.length()} bytes, nghi ngờ file hỏng)"
-                                else -> "mã lỗi native: $result"
+                                outputFile.delete()
+                                statusText.text = "Upscale thành công nhưng file output không decode được bitmap."
                             }
                         }
-                        if (outputFile.exists()) outputFile.delete()
-                        statusText.text = "Upscale thất bại: $reason"
                     }
-                    currentTempOutput = null
+
+                    override fun onFailure(message: String) {
+                        runOnUiThread {
+                            setRunningUi(false)
+                            statusText.text = "Lỗi: $message"
+                        }
+                    }
                 }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    setRunningUi(false)
-                    tempOutput?.delete()
-                    currentTempOutput = null
-                    statusText.text = "Lỗi: ${e.message}"
-                }
-            } catch (e: UnsatisfiedLinkError) {
-                runOnUiThread {
-                    setRunningUi(false)
-                    tempOutput?.delete()
-                    currentTempOutput = null
-                    statusText.text = "Lỗi native: ${e.message}"
-                }
-            }
+            )
         }
     }
 }
