@@ -8,7 +8,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.view.View
 import android.view.ViewGroup
@@ -31,7 +30,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var outputDirButton: Button
     private lateinit var outputDirText: TextView
     private lateinit var openOutputDirButton: Button
-
     private lateinit var scaleRadioGroup: RadioGroup
     private lateinit var runtimeRadioGroup: RadioGroup
 
@@ -44,7 +42,6 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var isBatchCancelRequested = false
     @Volatile private var lastProgressText = ""
     private var upscaleStartedAt = 0L
-
     private lateinit var upscaleEngine: XlsrUpscaleEngine
 
     private val elapsedTicker = object : Runnable {
@@ -55,49 +52,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val pickOutputDirectory =
-        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-            if (uri != null) {
-                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                try {
-                    contentResolver.takePersistableUriPermission(uri, takeFlags)
-                } catch (_: Exception) {
-                    // Some providers grant access only for the current session.
-                }
-                outputTreeUri = uri
-                val display = uri.lastPathSegment?.substringAfter(":") ?: uri.toString()
-                outputDirText.text = "Kết quả: $display"
-                statusText.text = "Đã chọn thư mục lưu kết quả."
-                openOutputDirButton.isEnabled = true
-                saveDirectoryToPrefs(uri)
-                updateUpscaleButtonState()
-            } else {
-                statusText.text = "Chưa chọn thư mục lưu kết quả."
-                updateUpscaleButtonState()
-            }
+    private val pickOutputDirectory = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri != null) {
+            val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            try { contentResolver.takePersistableUriPermission(uri, takeFlags) } catch (_: Exception) {}
+            outputTreeUri = uri
+            val display = uri.lastPathSegment?.substringAfter(":") ?: uri.toString()
+            outputDirText.text = "Kết quả: $display"
+            statusText.text = "Đã chọn thư mục lưu kết quả."
+            openOutputDirButton.isEnabled = true
+            saveDirectoryToPrefs(uri)
+            updateUpscaleButtonState()
+        } else {
+            statusText.text = "Chưa chọn thư mục lưu kết quả."
+            updateUpscaleButtonState()
         }
+    }
 
-    private val pickInputDirectory =
-        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-            uri ?: return@registerForActivityResult
-            try {
-                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (_: Exception) {
-                // ignore
-            }
-            loadImagesFromFolder(uri)
-        }
+    private val pickInputDirectory = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        uri ?: return@registerForActivityResult
+        try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
+        loadImagesFromFolder(uri)
+    }
 
-    private val pickImages =
-        registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris: List<Uri> ->
-            if (uris.isEmpty()) return@registerForActivityResult
-            prepareInputFilesFromUris(uris, "ảnh đã chọn")
-        }
+    private val pickImages = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) prepareInputFilesFromUris(uris, "ảnh đã chọn")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
         upscaleEngine = XlsrUpscaleEngine(this)
 
         statusText = findViewById(R.id.statusText)
@@ -108,33 +92,20 @@ class MainActivity : AppCompatActivity() {
         outputDirButton = findViewById(R.id.outputDirButton)
         outputDirText = findViewById(R.id.outputDirText)
         openOutputDirButton = findViewById(R.id.openOutputDirButton)
-
         scaleRadioGroup = findViewById(R.id.scaleRadioGroup)
         runtimeRadioGroup = findViewById(R.id.runtimeRadioGroup)
 
         outputDirText.text = "Chưa chọn thư mục lưu"
+        openOutputDirButton.text = "Xem/chọn thư mục kết quả"
         openOutputDirButton.isEnabled = false
-
         selectButton.text = "Chọn ảnh / nhiều ảnh"
         inputFolderButton = createInputFolderButton()
         insertInputFolderButton()
 
-        selectButton.setOnClickListener {
-            pickImages.launch("image/*")
-        }
-
-        inputFolderButton.setOnClickListener {
-            pickInputDirectory.launch(null)
-        }
-
-        outputDirButton.setOnClickListener {
-            pickOutputDirectory.launch(outputTreeUri)
-        }
-
-        openOutputDirButton.setOnClickListener {
-            openOutputFolder()
-        }
-
+        selectButton.setOnClickListener { pickImages.launch("image/*") }
+        inputFolderButton.setOnClickListener { pickInputDirectory.launch(null) }
+        outputDirButton.setOnClickListener { pickOutputDirectory.launch(outputTreeUri) }
+        openOutputDirButton.setOnClickListener { openOutputFolder() }
         upscaleButton.setOnClickListener {
             if (isUpscaling) {
                 isBatchCancelRequested = true
@@ -146,100 +117,71 @@ class MainActivity : AppCompatActivity() {
                 runUpscale()
             }
         }
-
-        scaleRadioGroup.setOnCheckedChangeListener { _, _ ->
-            updateUpscaleButtonState()
-        }
-
+        scaleRadioGroup.setOnCheckedChangeListener { _, _ -> updateUpscaleButtonState() }
         restoreSavedDirectory()
         updateUpscaleButtonState()
     }
 
-    private fun createInputFolderButton(): Button {
-        return Button(this).apply {
-            text = "Chọn thư mục ảnh"
-            isAllCaps = false
-            textSize = 15f
-        }
+    private fun createInputFolderButton(): Button = Button(this).apply {
+        text = "Chọn thư mục ảnh"
+        isAllCaps = false
+        textSize = 15f
     }
 
     private fun insertInputFolderButton() {
         val parent = selectButton.parent as? LinearLayout ?: return
         val index = parent.indexOfChild(selectButton)
-        val params = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(52)
-        ).apply {
-            topMargin = dp(8)
-        }
+        val params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(8) }
         parent.addView(inputFolderButton, index + 1, params)
     }
 
-    private fun dp(value: Int): Int {
-        return (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun getSelectedScale(): Int = when (scaleRadioGroup.checkedRadioButtonId) {
+        R.id.radio2x -> 2
+        R.id.radio3x -> 3
+        R.id.radio4x -> 4
+        else -> 3
     }
 
-    private fun getSelectedScale(): Int {
-        return when (scaleRadioGroup.checkedRadioButtonId) {
-            R.id.radio2x -> 2
-            R.id.radio3x -> 3
-            R.id.radio4x -> 4
-            else -> 3
-        }
+    private fun getPreferredRuntime(): String = when (runtimeRadioGroup.checkedRadioButtonId) {
+        R.id.radioNnapi -> "nnapi"
+        R.id.radioGpu -> "gpu"
+        R.id.radioCpu -> "cpu"
+        else -> "nnapi"
     }
 
-    private fun getPreferredRuntime(): String {
-        return when (runtimeRadioGroup.checkedRadioButtonId) {
-            R.id.radioNnapi -> "nnapi"
-            R.id.radioGpu -> "gpu"
-            R.id.radioCpu -> "cpu"
-            else -> "nnapi"
-        }
-    }
-
-    private fun getActualRuntimeName(fileName: String): String {
-        return when {
-            fileName.contains("nnapi_npu") -> "NNAPI/NPU"
-            fileName.contains("gpu") -> "GPU"
-            else -> "CPU fallback"
-        }
+    private fun getActualRuntimeName(fileName: String): String = when {
+        fileName.contains("nnapi_npu") -> "NNAPI/NPU"
+        fileName.contains("gpu") -> "GPU"
+        else -> "CPU fallback"
     }
 
     private fun restoreSavedDirectory() {
         val prefs = getSharedPreferences("upscayl_prefs", Context.MODE_PRIVATE)
-        val uriStr = prefs.getString("output_tree_uri", null)
-        if (uriStr != null) {
-            try {
-                val uri = Uri.parse(uriStr)
-                var hasPermission = false
-                val persistedPermissions = contentResolver.persistedUriPermissions
-                for (permission in persistedPermissions) {
-                    if (permission.uri == uri) {
-                        hasPermission = true
-                        break
-                    }
-                }
-                if (hasPermission) {
-                    outputTreeUri = uri
-                    val display = uri.lastPathSegment?.substringAfter(":") ?: uri.toString()
-                    outputDirText.text = "Kết quả: $display"
-                    openOutputDirButton.isEnabled = true
-                } else {
-                    outputTreeUri = null
-                    outputDirText.text = "Chưa chọn thư mục lưu"
-                    openOutputDirButton.isEnabled = false
-                }
-            } catch (_: Exception) {
+        val uriStr = prefs.getString("output_tree_uri", null) ?: return
+        try {
+            val uri = Uri.parse(uriStr)
+            val hasPermission = contentResolver.persistedUriPermissions.any { it.uri == uri }
+            if (hasPermission) {
+                outputTreeUri = uri
+                val display = uri.lastPathSegment?.substringAfter(":") ?: uri.toString()
+                outputDirText.text = "Kết quả: $display"
+                openOutputDirButton.isEnabled = true
+            } else {
                 outputTreeUri = null
                 outputDirText.text = "Chưa chọn thư mục lưu"
                 openOutputDirButton.isEnabled = false
             }
+        } catch (_: Exception) {
+            outputTreeUri = null
+            outputDirText.text = "Chưa chọn thư mục lưu"
+            openOutputDirButton.isEnabled = false
         }
     }
 
     private fun saveDirectoryToPrefs(uri: Uri) {
-        val prefs = getSharedPreferences("upscayl_prefs", Context.MODE_PRIVATE)
-        prefs.edit().putString("output_tree_uri", uri.toString()).apply()
+        getSharedPreferences("upscayl_prefs", Context.MODE_PRIVATE).edit().putString("output_tree_uri", uri.toString()).apply()
     }
 
     private fun openOutputFolder() {
@@ -249,59 +191,8 @@ class MainActivity : AppCompatActivity() {
             pickOutputDirectory.launch(null)
             return
         }
-
-        val documentUri = try {
-            DocumentsContract.buildDocumentUriUsingTree(
-                treeUri,
-                DocumentsContract.getTreeDocumentId(treeUri)
-            )
-        } catch (_: Exception) {
-            treeUri
-        }
-
-        val baseViewIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(documentUri, DocumentsContract.Document.MIME_TYPE_DIR)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
-        }
-
-        val systemFileManagers = listOf(
-            "com.google.android.documentsui",
-            "com.android.documentsui"
-        )
-
-        for (pkg in systemFileManagers) {
-            val explicitIntent = Intent(baseViewIntent).setPackage(pkg)
-            if (startIntentIfResolvable(explicitIntent)) {
-                return
-            }
-        }
-
-        val pickerIntent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-            putExtra(DocumentsContract.EXTRA_INITIAL_URI, treeUri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
-        }
-
-        if (!startIntentIfResolvable(pickerIntent)) {
-            Toast.makeText(this, "Không mở được thư mục. Hãy mở bằng ứng dụng Files.", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun startIntentIfResolvable(intent: Intent): Boolean {
-        return try {
-            if (intent.resolveActivity(packageManager) != null) {
-                startActivity(intent)
-                true
-            } else {
-                false
-            }
-        } catch (_: Exception) {
-            false
-        }
+        statusText.text = "Đang mở trình quản lý tệp tại thư mục kết quả..."
+        pickOutputDirectory.launch(treeUri)
     }
 
     private fun loadImagesFromFolder(treeUri: Uri) {
@@ -310,9 +201,7 @@ class MainActivity : AppCompatActivity() {
         thread {
             val root = DocumentFile.fromTreeUri(this, treeUri)
             val docs = mutableListOf<DocumentFile>()
-            if (root != null) {
-                collectImageDocuments(root, docs)
-            }
+            if (root != null) collectImageDocuments(root, docs)
             val uris = docs.map { it.uri }
             runOnUiThread {
                 if (uris.isEmpty()) {
@@ -341,11 +230,7 @@ class MainActivity : AppCompatActivity() {
         val mime = document.type ?: ""
         if (mime.startsWith("image/")) return true
         val name = document.name?.lowercase() ?: return false
-        return name.endsWith(".png") ||
-            name.endsWith(".jpg") ||
-            name.endsWith(".jpeg") ||
-            name.endsWith(".webp") ||
-            name.endsWith(".bmp")
+        return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp") || name.endsWith(".bmp")
     }
 
     private fun prepareInputFilesFromUris(uris: List<Uri>, sourceLabel: String) {
@@ -357,22 +242,15 @@ class MainActivity : AppCompatActivity() {
             for ((index, uri) in uris.distinct().withIndex()) {
                 try {
                     val copied = copyUriToCache(uri, index)
-                    if (isImageWithinLimit(copied)) {
-                        prepared.add(copied)
-                    } else {
-                        skipped++
-                        copied.delete()
-                    }
+                    if (isImageWithinLimit(copied)) prepared.add(copied) else { skipped++; copied.delete() }
                 } catch (_: Exception) {
                     skipped++
                 }
             }
-
             runOnUiThread {
                 selectedInputFiles.clear()
                 selectedInputFiles.addAll(prepared)
                 inputFile = prepared.firstOrNull()
-
                 if (prepared.isNotEmpty()) {
                     showPreview(prepared.first())
                     val skippedText = if (skipped > 0) ", bỏ qua $skipped ảnh lỗi/quá lớn" else ""
@@ -395,22 +273,14 @@ class MainActivity : AppCompatActivity() {
         val safeName = sanitizeFileName(rawName)
         val outFile = File(cacheDir, "input_${System.currentTimeMillis()}_${index}_$safeName")
         val input = contentResolver.openInputStream(uri) ?: throw IllegalArgumentException("Không mở được ảnh đầu vào")
-        input.use { inp ->
-            FileOutputStream(outFile).use { output ->
-                inp.copyTo(output)
-            }
-        }
+        input.use { inp -> FileOutputStream(outFile).use { output -> inp.copyTo(output) } }
         return outFile
     }
 
-    private fun sanitizeFileName(name: String): String {
-        return name.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-    }
+    private fun sanitizeFileName(name: String): String = name.replace(Regex("[\\\\/:*?\"<>|]"), "_")
 
     private fun isImageWithinLimit(file: File): Boolean {
-        val options = BitmapFactory.Options().apply {
-            inJustDecodeBounds = true
-        }
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, options)
         val w = options.outWidth
         val h = options.outHeight
@@ -422,11 +292,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPreview(file: File) {
         val bmp = decodeSampledBitmap(file.absolutePath, 1024, 1024)
-        if (bmp != null) {
-            previewImage.setImageBitmap(bmp)
-        } else {
-            previewImage.setImageURI(Uri.fromFile(file))
-        }
+        if (bmp != null) previewImage.setImageBitmap(bmp) else previewImage.setImageURI(Uri.fromFile(file))
     }
 
     private fun getDisplayName(uri: Uri): String? {
@@ -438,49 +304,31 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveToUserDir(tempFile: File): Pair<String, Boolean> {
         val treeUri = outputTreeUri ?: return Pair("Chưa chọn thư mục lưu kết quả.", false)
-
-        try {
+        return try {
             val docTree = DocumentFile.fromTreeUri(this, treeUri)
             val fileName = tempFile.name
-            val targetFile = docTree?.createFile("image/png", fileName)
-                ?: return Pair("Không tạo được file trong thư mục đích.", false)
-            val outStream = contentResolver.openOutputStream(targetFile.uri, "w")
-                ?: return Pair("Không mở được output stream cho file đích.", false)
-            outStream.use { out ->
-                tempFile.inputStream().use { inp ->
-                    inp.copyTo(out)
-                }
-            }
+            val targetFile = docTree?.createFile("image/png", fileName) ?: return Pair("Không tạo được file trong thư mục đích.", false)
+            val outStream = contentResolver.openOutputStream(targetFile.uri, "w") ?: return Pair("Không mở được output stream cho file đích.", false)
+            outStream.use { out -> tempFile.inputStream().use { inp -> inp.copyTo(out) } }
             lastSavedUri = targetFile.uri
-            return Pair("Đã lưu vào thư mục đã chọn: $fileName", true)
+            Pair("Đã lưu vào thư mục đã chọn: $fileName", true)
         } catch (e: Exception) {
-            return Pair("Lỗi khi copy vào thư mục đích: ${e.message}", false)
+            Pair("Lỗi khi copy vào thư mục đích: ${e.message}", false)
         }
     }
 
     private fun decodeSampledBitmap(path: String, maxW: Int, maxH: Int): Bitmap? {
-        val opts = BitmapFactory.Options().apply {
-            inJustDecodeBounds = true
-        }
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, opts)
         if (opts.outWidth <= 0 || opts.outHeight <= 0) return null
-
         var sampleSize = 1
-        while (opts.outWidth / sampleSize > maxW || opts.outHeight / sampleSize > maxH) {
-            sampleSize *= 2
-        }
-        val decodeOpts = BitmapFactory.Options().apply {
-            inSampleSize = sampleSize
-        }
+        while (opts.outWidth / sampleSize > maxW || opts.outHeight / sampleSize > maxH) sampleSize *= 2
+        val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
         return BitmapFactory.decodeFile(path, decodeOpts)
     }
 
     private fun buildStatusWithElapsed(baseText: String): String {
-        val elapsedMs = if (upscaleStartedAt > 0L) {
-            System.currentTimeMillis() - upscaleStartedAt
-        } else {
-            0L
-        }
+        val elapsedMs = if (upscaleStartedAt > 0L) System.currentTimeMillis() - upscaleStartedAt else 0L
         return "$baseText • ${formatElapsed(elapsedMs)}"
     }
 
@@ -493,10 +341,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUpscaleButtonText() {
         if (!::upscaleButton.isInitialized) return
-        if (isUpscaling) {
-            upscaleButton.text = "Hủy"
-            return
-        }
+        if (isUpscaling) { upscaleButton.text = "Hủy"; return }
         val scaleText = "${getSelectedScale()}x"
         upscaleButton.text = when {
             selectedInputFiles.isEmpty() -> "Bắt đầu Upscale $scaleText"
@@ -508,11 +353,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUpscaleButtonState() {
         if (!::upscaleButton.isInitialized) return
-        upscaleButton.isEnabled = if (isUpscaling) {
-            true
-        } else {
-            selectedInputFiles.isNotEmpty() && outputTreeUri != null
-        }
+        upscaleButton.isEnabled = if (isUpscaling) true else selectedInputFiles.isNotEmpty() && outputTreeUri != null
         updateUpscaleButtonText()
     }
 
@@ -525,7 +366,6 @@ class MainActivity : AppCompatActivity() {
         runtimeRadioGroup.isEnabled = !running
         openOutputDirButton.isEnabled = !running && outputTreeUri != null
         updateUpscaleButtonState()
-
         if (!running) {
             progressBar.visibility = View.GONE
             progressBar.isIndeterminate = false
@@ -542,111 +382,72 @@ class MainActivity : AppCompatActivity() {
             pickOutputDirectory.launch(null)
             return
         }
-
         val selectedScale = getSelectedScale()
         val preferredRuntime = getPreferredRuntime()
         val totalImages = inputs.size
-
         isBatchCancelRequested = false
         progressBar.visibility = View.VISIBLE
         progressBar.isIndeterminate = true
         progressBar.progress = 0
         upscaleStartedAt = System.currentTimeMillis()
-
         val pipelineLabel = when (selectedScale) {
             2 -> "2x = XLSR 3x + resize down"
             3 -> "XLSR 3x native"
             4 -> "4x = XLSR 3x + resize up"
             else -> "XLSR 3x native"
         }
-
         lastProgressText = "Đang khởi tạo $pipelineLabel cho $totalImages ảnh..."
         statusText.text = buildStatusWithElapsed(lastProgressText)
         setRunningUi(true)
         uiHandler.post(elapsedTicker)
-
         thread {
             val tempDir = getExternalFilesDir(null) ?: filesDir
             var completed = 0
             var failed = 0
             var cancelled = false
-
             for ((index, input) in inputs.withIndex()) {
-                if (isBatchCancelRequested) {
-                    cancelled = true
-                    break
-                }
-
+                if (isBatchCancelRequested) { cancelled = true; break }
                 val imageNo = index + 1
                 var itemSaved = false
                 var itemCancelled = false
-
-                upscaleEngine.execute(
-                    input.absolutePath,
-                    tempDir,
-                    selectedScale,
-                    preferredRuntime,
-                    object : XlsrUpscaleEngine.EngineCallback {
-                        override fun onProgress(doneTiles: Int, totalTiles: Int, phase: String, runtimeLabel: String) {
-                            runOnUiThread {
-                                val progressText = "Ảnh $imageNo/$totalImages · $phase $doneTiles/$totalTiles ($runtimeLabel)"
-                                lastProgressText = progressText
-                                val elapsedMs = System.currentTimeMillis() - upscaleStartedAt
-                                statusText.text = "$progressText • ${formatElapsed(elapsedMs)}"
-                                progressBar.visibility = View.VISIBLE
-                                progressBar.isIndeterminate = false
-                                progressBar.max = totalTiles
-                                progressBar.progress = doneTiles
-                            }
-                        }
-
-                        override fun onSuccess(outputFile: File, pipelineDescription: String) {
-                            val (displayPath, saveOk) = saveToUserDir(outputFile)
-                            itemSaved = saveOk
-                            val bmp = decodeSampledBitmap(outputFile.absolutePath, 1024, 1024)
-                            runOnUiThread {
-                                if (bmp != null) {
-                                    previewImage.setImageBitmap(bmp)
-                                }
-                                val runtimeName = getActualRuntimeName(outputFile.name)
-                                statusText.text = if (saveOk) {
-                                    "Xong ảnh $imageNo/$totalImages: $pipelineDescription · $runtimeName"
-                                } else {
-                                    "Upscale xong ảnh $imageNo/$totalImages nhưng lưu lỗi: $displayPath"
-                                }
-                            }
-                        }
-
-                        override fun onFailure(message: String) {
-                            if (message.contains("hủy", ignoreCase = true)) {
-                                itemCancelled = true
-                                cancelled = true
-                            }
-                            runOnUiThread {
-                                statusText.text = "Lỗi ảnh $imageNo/$totalImages: $message"
-                            }
+                upscaleEngine.execute(input.absolutePath, tempDir, selectedScale, preferredRuntime, object : XlsrUpscaleEngine.EngineCallback {
+                    override fun onProgress(doneTiles: Int, totalTiles: Int, phase: String, runtimeLabel: String) {
+                        runOnUiThread {
+                            val progressText = "Ảnh $imageNo/$totalImages · $phase $doneTiles/$totalTiles ($runtimeLabel)"
+                            lastProgressText = progressText
+                            val elapsedMs = System.currentTimeMillis() - upscaleStartedAt
+                            statusText.text = "$progressText • ${formatElapsed(elapsedMs)}"
+                            progressBar.visibility = View.VISIBLE
+                            progressBar.isIndeterminate = false
+                            progressBar.max = totalTiles
+                            progressBar.progress = doneTiles
                         }
                     }
-                )
-
+                    override fun onSuccess(outputFile: File, pipelineDescription: String) {
+                        val (displayPath, saveOk) = saveToUserDir(outputFile)
+                        itemSaved = saveOk
+                        val bmp = decodeSampledBitmap(outputFile.absolutePath, 1024, 1024)
+                        runOnUiThread {
+                            if (bmp != null) previewImage.setImageBitmap(bmp)
+                            val runtimeName = getActualRuntimeName(outputFile.name)
+                            statusText.text = if (saveOk) "Xong ảnh $imageNo/$totalImages: $pipelineDescription · $runtimeName" else "Upscale xong ảnh $imageNo/$totalImages nhưng lưu lỗi: $displayPath"
+                        }
+                    }
+                    override fun onFailure(message: String) {
+                        if (message.contains("hủy", ignoreCase = true)) { itemCancelled = true; cancelled = true }
+                        runOnUiThread { statusText.text = "Lỗi ảnh $imageNo/$totalImages: $message" }
+                    }
+                })
                 when {
-                    itemCancelled || isBatchCancelRequested -> {
-                        cancelled = true
-                        break
-                    }
+                    itemCancelled || isBatchCancelRequested -> { cancelled = true; break }
                     itemSaved -> completed++
                     else -> failed++
                 }
             }
-
             runOnUiThread {
                 setRunningUi(false)
                 val elapsed = formatElapsed(System.currentTimeMillis() - upscaleStartedAt)
-                statusText.text = if (cancelled) {
-                    "Đã hủy. Hoàn tất $completed/$totalImages ảnh, lỗi $failed ảnh • $elapsed"
-                } else {
-                    "Hoàn tất batch: $completed/$totalImages ảnh, lỗi $failed ảnh • $elapsed"
-                }
+                statusText.text = if (cancelled) "Đã hủy. Hoàn tất $completed/$totalImages ảnh, lỗi $failed ảnh • $elapsed" else "Hoàn tất batch: $completed/$totalImages ảnh, lỗi $failed ảnh • $elapsed"
             }
         }
     }
