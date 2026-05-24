@@ -191,8 +191,71 @@ class MainActivity : AppCompatActivity() {
             pickOutputDirectory.launch(null)
             return
         }
-        statusText.text = "Đang mở trình quản lý tệp tại thư mục kết quả..."
-        pickOutputDirectory.launch(treeUri)
+        statusText.text = "Đang mở thư mục kết quả..."
+        val documentId = try {
+            android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+        } catch (_: Exception) {
+            null
+        }
+        val documentUri = if (documentId != null) {
+            android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+        } else {
+            treeUri
+        }
+
+        val targetPackages = listOf(
+            "com.google.android.documentsui",
+            "com.android.documentsui",
+            "com.sec.android.app.myfiles",
+            "com.mi.android.globalFileexplorer",
+            "com.coloros.filemanager",
+            "com.oneplus.filemanager",
+            "com.huawei.desktop.explorer",
+            "com.android.filemanager"
+        )
+
+        var launched = false
+        for (pkg in targetPackages) {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(documentUri, "vnd.android.document/directory")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    setPackage(pkg)
+                }
+                startActivity(intent)
+                launched = true
+                break
+            } catch (_: Exception) {
+                // Continue to try next package
+            }
+        }
+
+        if (!launched) {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(documentUri, "vnd.android.document/directory")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(treeUri, "vnd.android.document/directory")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(intent)
+                } catch (e2: Exception) {
+                    try {
+                        pickOutputDirectory.launch(treeUri)
+                    } catch (e3: Exception) {
+                        Toast.makeText(this, "Không thể mở thư mục", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
     }
 
     private fun loadImagesFromFolder(treeUri: Uri) {
