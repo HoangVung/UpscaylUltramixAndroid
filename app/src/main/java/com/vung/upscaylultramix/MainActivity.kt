@@ -250,30 +250,57 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        try {
-            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(treeUri, DocumentsContract.Document.MIME_TYPE_DIR)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
-            }
-            startActivity(viewIntent)
-            return
+        val documentUri = try {
+            DocumentsContract.buildDocumentUriUsingTree(
+                treeUri,
+                DocumentsContract.getTreeDocumentId(treeUri)
+            )
         } catch (_: Exception) {
-            // Fallback below.
+            treeUri
         }
 
-        try {
-            val treeIntent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                putExtra(DocumentsContract.EXTRA_INITIAL_URI, treeUri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+        val baseViewIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(documentUri, DocumentsContract.Document.MIME_TYPE_DIR)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+        }
+
+        val systemFileManagers = listOf(
+            "com.google.android.documentsui",
+            "com.android.documentsui"
+        )
+
+        for (pkg in systemFileManagers) {
+            val explicitIntent = Intent(baseViewIntent).setPackage(pkg)
+            if (startIntentIfResolvable(explicitIntent)) {
+                return
             }
-            startActivity(treeIntent)
-        } catch (_: Exception) {
+        }
+
+        val pickerIntent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            putExtra(DocumentsContract.EXTRA_INITIAL_URI, treeUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+        }
+
+        if (!startIntentIfResolvable(pickerIntent)) {
             Toast.makeText(this, "Không mở được thư mục. Hãy mở bằng ứng dụng Files.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun startIntentIfResolvable(intent: Intent): Boolean {
+        return try {
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                true
+            } else {
+                false
+            }
+        } catch (_: Exception) {
+            false
         }
     }
 
