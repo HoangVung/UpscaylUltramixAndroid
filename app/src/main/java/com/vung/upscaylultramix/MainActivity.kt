@@ -66,10 +66,14 @@ class MainActivity : AppCompatActivity() {
                 }
                 outputTreeUri = uri
                 val display = uri.lastPathSegment?.substringAfter(":") ?: uri.toString()
-                outputDirText.text = "Thư mục: $display"
-                statusText.text = "Đã chọn thư mục lưu ảnh."
+                outputDirText.text = "Kết quả: $display"
+                statusText.text = "Đã chọn thư mục lưu kết quả."
                 openOutputDirButton.isEnabled = true
                 saveDirectoryToPrefs(uri)
+                updateUpscaleButtonState()
+            } else {
+                statusText.text = "Chưa chọn thư mục lưu kết quả."
+                updateUpscaleButtonState()
             }
         }
 
@@ -108,6 +112,9 @@ class MainActivity : AppCompatActivity() {
         scaleRadioGroup = findViewById(R.id.scaleRadioGroup)
         runtimeRadioGroup = findViewById(R.id.runtimeRadioGroup)
 
+        outputDirText.text = "Chưa chọn thư mục lưu"
+        openOutputDirButton.isEnabled = false
+
         selectButton.text = "Chọn ảnh / nhiều ảnh"
         inputFolderButton = createInputFolderButton()
         insertInputFolderButton()
@@ -121,7 +128,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         outputDirButton.setOnClickListener {
-            pickOutputDirectory.launch(null)
+            pickOutputDirectory.launch(outputTreeUri)
         }
 
         openOutputDirButton.setOnClickListener {
@@ -141,10 +148,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         scaleRadioGroup.setOnCheckedChangeListener { _, _ ->
-            updateUpscaleButtonText()
+            updateUpscaleButtonState()
         }
 
         restoreSavedDirectory()
+        updateUpscaleButtonState()
     }
 
     private fun createInputFolderButton(): Button {
@@ -214,11 +222,17 @@ class MainActivity : AppCompatActivity() {
                 if (hasPermission) {
                     outputTreeUri = uri
                     val display = uri.lastPathSegment?.substringAfter(":") ?: uri.toString()
-                    outputDirText.text = "Thư mục: $display"
+                    outputDirText.text = "Kết quả: $display"
                     openOutputDirButton.isEnabled = true
+                } else {
+                    outputTreeUri = null
+                    outputDirText.text = "Chưa chọn thư mục lưu"
+                    openOutputDirButton.isEnabled = false
                 }
             } catch (_: Exception) {
-                // ignore
+                outputTreeUri = null
+                outputDirText.text = "Chưa chọn thư mục lưu"
+                openOutputDirButton.isEnabled = false
             }
         }
     }
@@ -230,37 +244,37 @@ class MainActivity : AppCompatActivity() {
 
     private fun openOutputFolder() {
         val treeUri = outputTreeUri
-        if (treeUri != null) {
-            try {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                    putExtra(DocumentsContract.EXTRA_INITIAL_URI, treeUri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                    addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                    addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
-                }
-                startActivity(intent)
-                return
-            } catch (_: Exception) {
-                // ignore
-            }
+        if (treeUri == null) {
+            statusText.text = "Hãy chọn thư mục lưu kết quả trước."
+            pickOutputDirectory.launch(null)
+            return
         }
 
-        val fileUri = lastSavedUri
-        if (fileUri != null) {
-            try {
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(fileUri, "image/png")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(intent)
-                return
-            } catch (_: Exception) {
-                // ignore
+        try {
+            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(treeUri, DocumentsContract.Document.MIME_TYPE_DIR)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
             }
+            startActivity(viewIntent)
+            return
+        } catch (_: Exception) {
+            // Fallback below.
         }
 
-        Toast.makeText(this, "Hãy dùng ứng dụng Files để mở thư mục lưu", Toast.LENGTH_LONG).show()
+        try {
+            val treeIntent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                putExtra(DocumentsContract.EXTRA_INITIAL_URI, treeUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+            }
+            startActivity(treeIntent)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Không mở được thư mục. Hãy mở bằng ứng dụng Files.", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun loadImagesFromFolder(treeUri: Uri) {
@@ -279,7 +293,7 @@ class MainActivity : AppCompatActivity() {
                     inputFile = null
                     previewImage.setImageDrawable(null)
                     statusText.text = "Không tìm thấy ảnh trong thư mục đã chọn."
-                    upscaleButton.isEnabled = false
+                    updateUpscaleButtonState()
                 } else {
                     prepareInputFilesFromUris(uris, "ảnh trong thư mục")
                 }
@@ -335,14 +349,16 @@ class MainActivity : AppCompatActivity() {
                 if (prepared.isNotEmpty()) {
                     showPreview(prepared.first())
                     val skippedText = if (skipped > 0) ", bỏ qua $skipped ảnh lỗi/quá lớn" else ""
-                    statusText.text = "Đã chọn ${prepared.size} ảnh$skippedText."
-                    upscaleButton.isEnabled = true
+                    statusText.text = if (outputTreeUri == null) {
+                        "Đã chọn ${prepared.size} ảnh$skippedText. Hãy chọn thư mục lưu kết quả."
+                    } else {
+                        "Đã chọn ${prepared.size} ảnh$skippedText."
+                    }
                 } else {
                     previewImage.setImageDrawable(null)
                     statusText.text = "Không có ảnh hợp lệ. Giới hạn: tối đa 6M pixels và cạnh dài không quá 3000px."
-                    upscaleButton.isEnabled = false
                 }
-                updateUpscaleButtonText()
+                updateUpscaleButtonState()
             }
         }
     }
@@ -394,10 +410,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveToUserDir(tempFile: File): Pair<String, Boolean> {
-        val treeUri = outputTreeUri ?: run {
-            lastSavedUri = Uri.fromFile(tempFile)
-            return Pair(tempFile.absolutePath, true)
-        }
+        val treeUri = outputTreeUri ?: return Pair("Chưa chọn thư mục lưu kết quả.", false)
 
         try {
             val docTree = DocumentFile.fromTreeUri(this, treeUri)
@@ -458,11 +471,22 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val scaleText = "${getSelectedScale()}x"
-        upscaleButton.text = if (selectedInputFiles.size > 1) {
-            "Bắt đầu Upscale ${selectedInputFiles.size} ảnh ($scaleText)"
-        } else {
-            "Bắt đầu Upscale $scaleText"
+        upscaleButton.text = when {
+            selectedInputFiles.isEmpty() -> "Bắt đầu Upscale $scaleText"
+            outputTreeUri == null -> "Chọn thư mục lưu trước"
+            selectedInputFiles.size > 1 -> "Bắt đầu Upscale ${selectedInputFiles.size} ảnh ($scaleText)"
+            else -> "Bắt đầu Upscale $scaleText"
         }
+    }
+
+    private fun updateUpscaleButtonState() {
+        if (!::upscaleButton.isInitialized) return
+        upscaleButton.isEnabled = if (isUpscaling) {
+            true
+        } else {
+            selectedInputFiles.isNotEmpty() && outputTreeUri != null
+        }
+        updateUpscaleButtonText()
     }
 
     private fun setRunningUi(running: Boolean) {
@@ -472,10 +496,9 @@ class MainActivity : AppCompatActivity() {
         outputDirButton.isEnabled = !running
         scaleRadioGroup.isEnabled = !running
         runtimeRadioGroup.isEnabled = !running
-        openOutputDirButton.isEnabled = !running && (outputTreeUri != null || lastSavedUri != null)
-        upscaleButton.isEnabled = if (running) true else selectedInputFiles.isNotEmpty()
+        openOutputDirButton.isEnabled = !running && outputTreeUri != null
+        updateUpscaleButtonState()
 
-        updateUpscaleButtonText()
         if (!running) {
             progressBar.visibility = View.GONE
             progressBar.isIndeterminate = false
@@ -487,6 +510,11 @@ class MainActivity : AppCompatActivity() {
     private fun runUpscale() {
         val inputs = selectedInputFiles.toList()
         if (inputs.isEmpty()) return
+        if (outputTreeUri == null) {
+            statusText.text = "Hãy chọn thư mục lưu kết quả trước khi chạy."
+            pickOutputDirectory.launch(null)
+            return
+        }
 
         val selectedScale = getSelectedScale()
         val preferredRuntime = getPreferredRuntime()
